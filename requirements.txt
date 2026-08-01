@@ -1,2 +1,3 @@
 # RetailSense 依赖
+streamlit>=1.60
 # Python 3.11+
