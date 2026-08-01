@@ -77,7 +77,31 @@ with st.sidebar:
         new_lang = "zh" if lang=="中文" else "en"
         if new_lang != st.session_state.lang:
             st.session_state.lang = new_lang; st.rerun()
-    st.caption("v1.0 · MIT")
+    st.divider()
+    with st.expander("About"):
+        st.markdown(T("""
+        **RetailSense** 由一位前瑞幸咖啡店长构建。
+        
+        在管理 200+ SKU 和 28% 食材成本率红线的 3 年中，她发现：
+        > **真正吃掉利润的从来不是成本，而是滞销。**
+        
+        本工具将 3 年零售管理经验 AI 化——
+        让每一个小卖家也能用数据做决策。
+        
+        [GitHub](https://github.com/yinqiqi1005-crypto/retail-sense) · MIT License
+        """,
+        """
+        **RetailSense** built by a former Luckin Coffee store manager.
+        
+        After 3 years managing 200+ SKUs and a 28% food cost redline, she learned:
+        > **Unsold inventory destroys profit faster than cost ever can.**
+        
+        This tool systemizes 3 years of retail operations experience into AI —
+        so every small seller can make data-driven decisions.
+        
+        [GitHub](https://github.com/yinqiqi1005-crypto/retail-sense) · MIT License
+        """))
+    st.caption("v1.1 · MIT")
 
 page = st.session_state.nav
 is_en = st.session_state.lang == "en"
@@ -119,6 +143,41 @@ elif page == "选品评分":
     st.title(T("产品选品评分","Product Scoring"))
     st.caption(T("多维度加权评分 | 复购率权重 30% | 基于市场数据",
                  "Multi-dimensional scoring | 30% repurchase weight | Data-driven"))
+
+    # ── 方法论说明（专家会问）──
+    with st.expander(T("评分方法论与数据来源","Scoring Methodology & Data Sources"), expanded=False):
+        st.markdown(T("""
+        **设计理念**：本评分系统基于 3 年瑞幸门店管理经验 —— 管过 200+ SKU 的库存和成本后，发现**真正吃掉利润的不是成本，而是滞销**。
+        
+        **权重设计逻辑**：
+        | 维度 | 权重 | 业务理由 |
+        |------|:---:|------|
+        | 复购率 | 30% | 瑞幸经验：高复购产品的长期利润远超一次性高毛利产品。一个毛利70%但年销1次的SKU，不如毛利35%但月销3次的耗材 |
+        | 竞争度 | 25% | 竞品越少，定价权越大。45%的利润流失来自价格战 |
+        | 搜索趋势 | 25% | 处在上升期的品类，自然流量本身就能带来30-50%的订单 |
+        | 毛利率 | 20% | 重要但不是唯一标准 —— 高毛利低流速 = 库存积压 = 隐性亏损 |
+        
+        **数据来源**：
+        - 竞品数量：Etsy/Amazon 同类目搜索结果数（2026.07）
+        - 搜索增长率：Google Trends 近90天宠物饰品类目数据
+        - 年购买次数：宠物饰品行业均值（狗牌2-3次/年，零食8-12次/年）
+        """,
+        """
+        **Design Philosophy**: Scoring system based on 3 years of store management at Luckin Coffee — managing 200+ SKUs taught us that **unsold inventory kills profit faster than cost**.
+
+        **Weight Rationale**:
+        | Dimension | Weight | Business Logic |
+        |-----------|:---:|------|
+        | Repurchase | 30% | High-repeat products outperform high-margin one-offs. A 70% margin item sold once/year loses to a 35% margin consumable sold 3x/month |
+        | Competition | 25% | Fewer rivals = pricing power. 45% of margin erosion comes from price wars |
+        | Search Trend | 25% | Rising categories bring 30-50% organic orders through trend momentum |
+        | Gross Margin | 20% | Important but not decisive — high margin + low velocity = hidden loss |
+
+        **Data Sources**:
+        - Competitor count: Etsy/Amazon category search results (Jul 2026)
+        - Search growth: Google Trends 90-day pet accessories category data
+        - Annual purchases: Industry averages (dog tags 2-3x/yr, treats 8-12x/yr)
+        """))
 
     with st.container(border=True):
         st.markdown(T("**市场背景**","**Market Overview**"))
