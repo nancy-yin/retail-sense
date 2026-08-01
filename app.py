@@ -12,15 +12,27 @@ from retail_sense.sales_script import SalesScriptGenerator
 
 st.set_page_config(page_title="RetailSense", page_icon=" ", layout="wide")
 
-# ── 图片配置 ──
-IMAGES = {
-    "banner": "https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=1200",
-    "sidebar": "https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=400",
-    "footer": "https://images.unsplash.com/photo-1548199973-03cce0bbc87b?w=1200",
+# ── 图片配置（支持本地路径 + URL）──
+import os
+IMAGE_DIR = os.path.join(os.path.dirname(__file__), "images")
+DEFAULT_IMAGES = {
+    "banner": os.path.join(IMAGE_DIR, "banner.jpg"),
+    "sidebar": os.path.join(IMAGE_DIR, "sidebar.jpg"),
+    "footer": os.path.join(IMAGE_DIR, "footer.jpg"),
 }
-for key in IMAGES:
-    if key not in st.session_state:
-        st.session_state[f"img_{key}"] = IMAGES[key]
+
+def load_image(key):
+    """加载图片：优先本地，回退URL"""
+    path = st.session_state.get(f"img_{key}", DEFAULT_IMAGES[key])
+    if os.path.exists(path):
+        return path
+    if path.startswith("http"):
+        return path
+    return DEFAULT_IMAGES[key]
+
+for key in DEFAULT_IMAGES:
+    if f"img_{key}" not in st.session_state:
+        st.session_state[f"img_{key}"] = DEFAULT_IMAGES[key]
 
 # ── 产品数据 ──
 DEFAULT_PRODUCTS = [
@@ -40,7 +52,7 @@ for key in ["products","scored","top_pick","nav"]:
 
 # ── 侧边栏 ──
 with st.sidebar:
-    st.image(st.session_state.img_sidebar, use_container_width=True)
+    st.image(load_image("sidebar"), use_container_width=True)
     st.markdown("### RetailSense")
 
     for name in ["工作台","选品评分","定价模型","库存监控"]:
@@ -67,7 +79,7 @@ sales_gen = SalesScriptGenerator()
 
 # ── 工作台 ──
 if page == "工作台":
-    st.image(st.session_state.img_banner, use_container_width=True)
+    st.image(load_image("banner"), use_container_width=True)
     st.title("RetailSense")
     st.caption("AI 零售选品 · 定价 · 库存 · 多智能体销售自动化")
 
@@ -249,4 +261,4 @@ elif page == "库存监控":
                 st.info(f"**{inv.product_name}** 积压 {inv.turnover_days} 天 — 建议清仓")
 
 st.divider()
-st.image(st.session_state.img_footer, use_container_width=True)
+st.image(load_image("footer"), use_container_width=True)
