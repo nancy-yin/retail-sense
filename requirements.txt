@@ -1,0 +1,2 @@
+# RetailSense 依赖
+# Python 3.11+
