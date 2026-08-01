@@ -42,6 +42,14 @@ class InventoryStatus:
         return self.reorder_point - self.current_stock + self.safety_stock
 
     @property
+    def reorder_quantity(self) -> int:
+        """建议补货量：补到触发点以上"""
+        if self.current_stock >= self.reorder_point:
+            return 0
+        qty = self.reorder_point - self.current_stock
+        return max(round(self.daily_sales), qty)  # 至少补1天销量
+
+    @property
     def is_stale(self) -> bool:
         """是否滞销（30天未动销）"""
         if self.last_sold is None:
@@ -51,14 +59,14 @@ class InventoryStatus:
     @property
     def status(self) -> str:
         if self.current_stock == 0:
-            return "🔴 断货"
+            return "断货"
         if self.is_stale:
-            return "🟠 滞销"
+            return "滞销"
         if self.current_stock < self.safety_stock:
-            return "🟡 低库存"
+            return "低库存"
         if self.current_stock < self.reorder_point:
-            return "🟡 建议补货"
-        return "🟢 正常"
+            return "建议补货"
+        return "正常"
 
     def summary(self) -> str:
         lines = [
