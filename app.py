@@ -64,6 +64,9 @@ if "nav" not in st.session_state: st.session_state.nav = "工作台"
 if "scored" not in st.session_state: st.session_state.scored = False
 if "top_pick" not in st.session_state: st.session_state.top_pick = None
 
+is_en = st.session_state.lang == "en"
+T = lambda cn, en: en if is_en else cn
+
 # ── 侧边栏 ──
 with st.sidebar:
     st.image(load_image("sidebar"), use_container_width=True)
@@ -104,12 +107,10 @@ with st.sidebar:
     st.caption("v1.1 · MIT")
 
 page = st.session_state.nav
-is_en = st.session_state.lang == "en"
 
 def pname(p):
     return p.get("name_en" if is_en else "name", p["name"])
 
-T = lambda cn,en: en if is_en else cn
 
 # ═══════════════════════════════════════════
 # 工作台
