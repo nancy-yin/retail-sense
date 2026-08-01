@@ -1,0 +1,16 @@
+site_name: RetailSense
+site_description: AI 零售选品与库存决策系统
+repo_url: https://github.com/yinqiqi1005-crypto/retail-sense
+theme:
+  name: material
+  language: zh
+  palette:
+    primary: teal
+nav:
+  - 首页: index.md
+  - 快速开始: quickstart.md
+  - 模块:
+    - 选品评分: scorer.md
+    - 定价模型: pricing.md
+    - 库存预测: inventory.md
+  - Web面板: app.md
