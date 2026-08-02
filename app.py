@@ -15,6 +15,7 @@ from retail_sense.sales_script import SalesScriptGenerator
 from retail_sense.dataloader import *
 from retail_sense.regions import *
 from retail_sense.agent import VirtualAgent
+from retail_sense.agents import SalesPipeline
 
 st.set_page_config(page_title="RetailSense", page_icon=" ", layout="wide")
 
@@ -48,7 +49,7 @@ def pname(p): return p.get("name_en" if is_en else "name", p.get("name",""))
 # ── 侧边栏 ──
 with st.sidebar:
     st.image(load_image("sidebar"), use_container_width=True)
-    for name in ["工作台","选品评分","定价模型","库存监控"]:
+    for name in ["工作台","选品评分","定价模型","库存监控","销售自动化"]:
         kind = "primary" if st.session_state.nav == name else "secondary"
         if st.button(name, use_container_width=True, type=kind):
             st.session_state.nav = name; st.rerun()
@@ -344,7 +345,7 @@ elif page == "库存监控":
             T("产品","Product"): pname(i),
             "SKU": i.get("sku",""),
             T("库存","Qty"): qty,
-            T("日均","Daily"): f"{daily:.1f}",
+            T("日均","Daily"): f"{daily:.0f}",
             T("安全库存","Safety"): safety,
             T("建议补货","Reorder"): reorder_qty,
             T("状态","Status"): status_en if is_en else status_cn,
@@ -352,6 +353,90 @@ elif page == "库存监控":
 
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
     st.bar_chart(pd.DataFrame({pname(i):[i.get("qty",0)] for i in inv}, index=[T("库存","Qty")]).T, use_container_width=True)
+
+# ═══════════════════════════════════════════
+# 销售自动化 — 多Agent流水线
+# ═══════════════════════════════════════════
+elif page == "销售自动化":
+    st.title(T("多智能体销售自动化","Multi-Agent Sales Pipeline"))
+    st.caption("Scout → Price → Copy → Monitor 四Agent全自动流水线")
+
+    # 产品池
+    PRODUCTS = [
+        {"name":"刻字狗牌","name_en":"Engraved Dog Tag","cost":2.80,"price":12.99,"competitors":35,"search_growth":22,"trend_up":True,"annual_purchases":2.5,"is_consumable":False,"qty":45,"daily_avg":8.5},
+        {"name":"发光项圈","name_en":"LED Collar","cost":5.50,"price":24.99,"competitors":28,"search_growth":15,"trend_up":True,"annual_purchases":1.5,"is_consumable":False,"qty":12,"daily_avg":6.2},
+        {"name":"珐琅名牌","name_en":"Enamel Nameplate","cost":3.20,"price":16.99,"competitors":18,"search_growth":35,"trend_up":True,"annual_purchases":2.0,"is_consumable":False,"qty":120,"daily_avg":3.1},
+        {"name":"牵引绳套装","name_en":"Leash Set","cost":4.50,"price":22.99,"competitors":42,"search_growth":8,"trend_up":True,"annual_purchases":1.8,"is_consumable":False,"qty":0,"daily_avg":4.0},
+        {"name":"换牙零食","name_en":"Teething Treats","cost":3.00,"price":11.99,"competitors":30,"search_growth":28,"trend_up":True,"annual_purchases":8.0,"is_consumable":True,"qty":8,"daily_avg":15.0},
+    ]
+
+    # 控制面板
+    with st.container(border=True):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            target = st.slider(T("目标利润率","Target Margin"), 0.25, 0.60, 0.45, 0.05, format="%.0f%%")
+        with c2:
+            region = st.selectbox(T("目标市场","Region"), ["北美","欧洲","东南亚","日韩","澳洲"])
+        with c3:
+            st.metric(T("产品数","Products"), len(PRODUCTS))
+            st.metric(T("Agent数","Agents"), "4")
+
+    # 流水线步骤预览
+    st.markdown(T("**流水线**","**Pipeline**"))
+    steps = st.columns(4)
+    agent_names = [("Scout","🔍",T("选品侦察","Scout")),("Price","💰",T("智能定价","Price")),("Copy","✍️",T("文案生成","Copy")),("Monitor","📊",T("库存监控","Monitor"))]
+    for i, (name, icon, label) in enumerate(agent_names):
+        with steps[i]:
+            st.markdown(f"**{icon} {label}**")
+            st.caption(name)
+
+    # 执行
+    if st.button(T("启动全流程","Start Pipeline"), type="primary", use_container_width=True):
+        pipeline = SalesPipeline()
+        with st.spinner(T("Agent流水线执行中...","Pipeline running...")):
+            state = pipeline.run(PRODUCTS, target, region)
+
+        # 结果展示
+        st.success(T(f"全流程完成！({state.started_at} → {state.completed_at})",
+                     f"Pipeline complete! ({state.started_at} → {state.completed_at})"))
+
+        # 逐步结果
+        tab1, tab2, tab3, tab4 = st.tabs([T("选品评分","Scoring"),T("定价方案","Pricing"),T("营销内容","Copy"),T("监控报告","Monitor")])
+
+        with tab1:
+            if state.scored:
+                sd = pd.DataFrame([{"Product":r.product_name,"Score":r.final_score,
+                                    "Margin":r.margin_score,"Comp":r.competition_score} for r in state.scored])
+                st.dataframe(sd, use_container_width=True, hide_index=True,
+                            column_config={"Score":st.column_config.ProgressColumn(format="%.1f",min_value=0,max_value=100)})
+
+        with tab2:
+            if state.priced:
+                pd_data = pd.DataFrame(state.priced)
+                st.dataframe(pd_data[["name","suggested_price","profit","margin","above_redline"]],
+                            use_container_width=True, hide_index=True)
+
+        with tab3:
+            if state.copy:
+                for c in state.copy:
+                    with st.expander(c["name"]):
+                        st.markdown(f"**SEO文案**\n{c['seo']}")
+                        st.divider()
+                        st.markdown(f"**社交种草**\n{c['social']}")
+                        st.divider()
+                        st.markdown(f"**促单话术**\n{c['script']['开场']}")
+
+        with tab4:
+            if state.monitor:
+                for m in state.monitor:
+                    st.warning(f"**{m['name']}**: {'; '.join(m['issues'])}")
+            else:
+                st.success(T("所有产品正常","All products normal"))
+
+        # 执行日志
+        with st.expander(T("执行日志","Execution Log")):
+            for log in state.logs:
+                st.markdown(f"`{log}`")
 
 st.divider()
 st.image(load_image("footer"), use_container_width=True)
