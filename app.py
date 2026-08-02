@@ -411,7 +411,7 @@ elif page == "销售自动化":
         st.caption(T(f"当前产品池：{len(PRODUCTS)}个SKU | 利润率目标：{target_pct}%",
                      f"Product pool: {len(PRODUCTS)} SKUs | Target margin: {target_pct}%"))
 
-    # 流水线预览
+    # 流水线预览 — 标注Agent接入点
     st.markdown(T("**流水线**","**Pipeline**"))
     steps = st.columns(4)
     for i, (name, icon, label_cn, label_en, hint_cn, hint_en) in enumerate([
@@ -421,8 +421,61 @@ elif page == "销售自动化":
         ("Monitor","📊","库存监控","Monitor","异常巡检+趋势预测","Alert+trade forecast"),
     ]):
         with steps[i]:
-            st.markdown(f"**{icon} {T(label_cn, label_en)}**")
-            st.caption(T(hint_cn, hint_en))
+            st.markdown(f"""
+            <div style="border:1px solid #e0e0e0;border-radius:4px;padding:12px;text-align:center;min-height:90px;">
+                <div style="font-size:20px;">{icon}</div>
+                <div style="font-weight:600;font-size:13px;margin-top:4px;">{T(label_cn, label_en)}</div>
+                <div style="font-size:11px;color:#888;margin-top:2px;">{T(hint_cn, hint_en)}</div>
+                <div style="margin-top:6px;">
+                    <span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:2px;font-size:10px;font-weight:500;">
+                        {T('可接入Agent','Agent Ready')}
+                    </span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # Agent架构说明
+    with st.expander(T("Agent 架构说明","Agent Architecture"), expanded=False):
+        st.markdown(T("""
+        ```
+        ┌─────────────────────────────────────────────────┐
+        │           RetailSense Agent 架构                 │
+        ├─────────────────────────────────────────────────┤
+        │  Scout Agent ←─ 接入 DeepSeek/Claude API        │
+        │     ↓ 传递评分结果                               │
+        │  Price Agent ←─ 接入定价模型 + 实时汇率          │
+        │     ↓ 传递定价方案                               │
+        │  Copy Agent ←─ 接入 LLM 流式生成                 │
+        │     ↓ 传递营销内容                               │
+        │  Monitor Agent ←─ 接入库存系统 + 趋势预测        │
+        └─────────────────────────────────────────────────┘
+        ```
+        
+        **当前状态**：规则引擎模式（演示/测试用）
+        **完整模式**：每个 Agent 可接入独立 LLM（DeepSeek/Claude/GPT），实现真正的自主决策
+        
+        > 接入方式：替换 `SalesPipeline` 中各 Agent 的 `run()` 方法为 API 调用即可
+        """,
+        """
+        ```
+        ┌─────────────────────────────────────────────────┐
+        │         RetailSense Agent Architecture           │
+        ├─────────────────────────────────────────────────┤
+        │  Scout Agent ←─ Connect DeepSeek/Claude API     │
+        │     ↓ passes scoring results                    │
+        │  Price Agent ←─ Connect pricing + live FX        │
+        │     ↓ passes pricing plan                       │
+        │  Copy Agent ←─ Connect LLM streaming             │
+        │     ↓ passes marketing content                  │
+        │  Monitor Agent ←─ Connect inventory + forecast  │
+        └─────────────────────────────────────────────────┘
+        ```
+        
+        **Current**: Rule engine mode (demo/testing)
+        **Full mode**: Each Agent can connect to independent LLM for autonomous decisions
+        
+        > To enable: replace `run()` in each Agent with API calls
+        """))
 
     # 执行
     if st.button(T("启动全流程","Start Pipeline"), type="primary", use_container_width=True):
