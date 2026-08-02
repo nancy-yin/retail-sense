@@ -1,111 +1,94 @@
 """
-RetailSense — 智能促单话术生成器
-Hybrid: 规则引擎 + 模板组合
+RetailSense — 促单话术生成器 v2
+每品独立 · 产品特性驱动
 """
+
+PRODUCT_SCRIPTS = {
+    "刻字狗牌": {
+        "开场": "你家毛孩子有专属ID牌吗？万一走丢，这就是回家的唯一线索。",
+        "卖点": "304不锈钢激光刻字 · 双面雕刻 · ¥12.99 · 防水永不褪色",
+        "异议_贵": "比宠物店$25便宜一半。而且一个用3年，平均一天1分钱。丢了狗找回来的成本可不止$12.99。",
+        "异议_再看看": "当然可以。我把链接发你——这个价格含免费刻字，周末下单周一发货。",
+        "促单": "选好尺寸了吗？S适合泰迪/博美，M适合柯基/法斗，L适合金毛/拉布拉多。不确定的话量一下现在戴的牌子直径。",
+    },
+    "发光项圈": {
+        "开场": "早晚遛狗看不清路？试试这个LED发光项圈，200米外司机就能看到。",
+        "卖点": "USB充电 · 续航12小时 · IPX5防水 · ¥24.99",
+        "异议_贵": "算笔账：电池款一年换电池$20+，我们充一次用一周。一年电费不到$1。",
+        "异议_再看看": "理解。不过我诚实说——这批只剩最后几个，上次补货等了3周。",
+        "促单": "你家狗一般几点遛？早晨选常亮模式，晚上选慢闪最安全。",
+    },
+    "珐琅名牌": {
+        "开场": "这不是普通狗牌——这是手工珐琅彩微型艺术品。",
+        "卖点": "铜胎珐琅 · 800°C烧制 · 百年不褪色 · ¥16.99 · 礼盒装",
+        "异议_贵": "手工填色+高温烧制，一个师傅一天只做10件。$16.99买到的是独一无二的手工品，不是流水线通货。",
+        "异议_再看看": "每天限量10件，今天的只剩最后3个了。师傅明天休息，再要就等后天了。",
+        "促单": "送人还是自用？送人的话我们在手写卡上帮你写祝福语。",
+    },
+    "牵引绳套装": {
+        "开场": "你一年换几根牵引绳？试试这根——意大利头层牛皮，终身保修。",
+        "卖点": "头层牛皮 · 纯铜五金 · 承重200kg · ¥22.99套装",
+        "异议_贵": "便宜的绳一年换5根=$50。我们$22.99用3年起，还终身保修。算下来一年$7.66。",
+        "异议_再看看": "可以。不过我建议你摸一下实物——好牛皮的手感和PU完全不是一个东西。",
+        "促单": "套装含项圈+牵引绳+收纳袋。你家狗大概多重？60斤以内选M号就够了。",
+    },
+    "换牙零食": {
+        "开场": "你家狗在换牙期吗？试试这个——整块鸡胸肉烘干，不是肉粉压的。",
+        "卖点": "100%鸡胸肉 · 低温慢烘 · 独立包装 · ¥11.99 · 不吃包退",
+        "异议_贵": "比Petco同品质便宜40%。而且我们不吃包退——敢这么承诺是因为2000个狗狗测试92%都爱吃。",
+        "异议_再看看": "首单半价试吃，不满意全额退款。你没有风险。",
+        "促单": "一包20根，一天一根够用3周。要不要先拿一包试试？",
+    },
+    "宠物领结": {
+        "开场": "你家毛孩子缺一个上镜神器——这个领结戴上秒变绅士。",
+        "卖点": "韩版褶皱 · 50+花色 · 魔术贴固定 · ¥9.99",
+        "异议_贵": "一杯奶茶钱换来狗子一整年的回头率，不亏吧？",
+        "异议_再看看": "白色/红色/格纹三个最好卖，选一个试试？不满意退。",
+        "促单": "选哪个花色？第一次买推荐格纹——最百搭。",
+    },
+    "亚克力牌": {
+        "开场": "你家猫有戴名牌吗？试试这个2g超轻的——它甚至不知道自己戴着。",
+        "卖点": "仅2g · UV印刷 · 防水 · ¥8.99 · 猫咪/小型犬专用",
+        "异议_贵": "$8.99买一个回家的保障。找猫的寻猫启示都不止这个钱。",
+        "异议_再看看": "可以。我先把链接发你——有爪印/骨头/星座三种图案可以选。",
+        "促单": "选猫爪图案还是星座图案？刻字信息告诉我，今天下单明天发货。",
+    },
+    "宠物手链": {
+        "开场": "人宠情侣款手链——你和毛孩子戴同款，出门回头率200%。",
+        "卖点": "手工编织 · 天然宝石 · 可配主人款 · ¥14.99起",
+        "异议_贵": "手工编织一件40分钟，天然半宝石点缀。$14.99买到的是手艺，不是机器量产的塑料珠。",
+        "异议_再看看": "宝石每批限量，这批黑曜石只剩最后几条了。",
+        "促单": "你选黑曜石还是粉晶？喜欢的话主人款也配一条，套装省$2.99。",
+    },
+}
 
 
 class SalesScriptGenerator:
-    """促单话术生成器"""
-
-    # 话术模板库
-    OPENINGS = {
-        "痛点开场": "你是不是也在为{problem}而烦恼？",
-        "好奇开场": "你知道吗？{fact}",
-        "故事开场": "上个月有个客户{story}",
-        "直接开场": "给你看个好东西——{name}",
-    }
-
-    OBJECTION_HANDLERS = {
-        "太贵了": [
-            "贵有贵的道理：{name}用的是{quality}，用上{time}年没问题，平均下来一天才¥{daily_price:.2f}。",
-            "我理解你的顾虑。但你算一下，便宜的用{competitor_time}就得换，我们的一件顶{multiplier}件。",
-        ],
-        "再看看": [
-            "当然可以。不过这个价格是限时的，现在下单还送{gift}。",
-            "没问题！我把链接发你，随时可以回来看看。（附上好评截图）",
-        ],
-        "不需要": [
-            "理解。但{trigger_scenario}的时候，你会希望手边有{name}。",
-            "很多客户一开始也这么说，但用过之后都说{testimonial}。",
-        ],
-        "有更好的": [
-            "你指的哪一家？我帮你对比一下。{name}的优势是{advantage}。",
-            "当然市面选择很多。但{name}用了{quality}，这个价位找不到第二家。",
-        ],
-    }
-
-    CLOSERS = [
-        "今天下单，{benefit}。",
-        "现在买还送{gift}，数量有限。",
-        "要不要先拿一件试试？不满意包退。",
-        "你看选哪个颜色/尺寸？我帮你下单。",
-    ]
+    """促单话术生成器 v2"""
 
     def generate_opening(self, product: dict, style: str = "痛点开场") -> str:
-        """生成开场话术"""
         name = product.get("name", "")
-        template = self.OPENINGS.get(style, self.OPENINGS["直接开场"])
-
-        problems = {
-            True: "狗狗零食消耗太快，每次都要临时买",
-            False: "市面上的宠物牌千篇一律，没有个性",
-        }
-        facts = {
-            True: "80%的狗狗家长每月在零食上花超过200元",
-            False: f"手工定制{name}在美国Etsy上月搜索量增长35%",
-        }
-        stories = {
-            True: "买了3次便宜零食都不爱吃，直到试了我们的",
-            False: "刻了毛孩子名字的牌子丢了，邻居居然通过牌子送回来了",
-        }
-
-        problem = problems.get(product.get("is_consumable", False), problems[False])
-        fact = facts.get(product.get("is_consumable", False), facts[False])
-        story = stories.get(product.get("is_consumable", False), stories[False])
-
-        return template.format(name=name, problem=problem, fact=fact, story=story)
+        script = PRODUCT_SCRIPTS.get(name, {})
+        return script.get("开场", f"看看这个{name}？")
 
     def handle_objection(self, product: dict, objection: str) -> str:
-        """处理客户异议"""
         name = product.get("name", "")
-        price = product.get("price", 0)
-        is_consumable = product.get("is_consumable", False)
-
-        handlers = self.OBJECTION_HANDLERS.get(objection, self.OBJECTION_HANDLERS["再看看"])
-        template = handlers[0]
-
-        return template.format(
-            name=name,
-            quality="食品级材料" if is_consumable else "SUS304不锈钢",
-            time=2 if is_consumable else 5,
-            daily_price=round(price / (60 if is_consumable else 365), 2),
-            competitor_time="2周" if is_consumable else "1年",
-            multiplier="3" if is_consumable else "5",
-            gift="小包装试用装" if is_consumable else "刻字服务",
-            trigger_scenario="加班到家想犒劳毛孩子" if is_consumable else "毛孩子走丢时",
-            testimonial="再也不吃别家了" if is_consumable else "路人都在问哪里买的",
-            advantage="手工定制" if not is_consumable else "配方天然",
-        )
+        script = PRODUCT_SCRIPTS.get(name, {})
+        key = f"异议_{'贵' if '贵' in objection else '再看看'}"
+        return script.get(key, script.get("异议_再看看", "理解，随时回来。"))
 
     def generate_closer(self, product: dict) -> str:
-        """生成促单结束语"""
-        import random
-        template = random.choice(self.CLOSERS)
         name = product.get("name", "")
-        is_consumable = product.get("is_consumable", False)
-
-        return template.format(
-            name=name,
-            benefit="首单8折+包邮" if not is_consumable else "买三送一",
-            gift="免费刻字服务" if not is_consumable else "试吃装",
-        )
+        script = PRODUCT_SCRIPTS.get(name, {})
+        return script.get("促单", "要下单吗？")
 
     def full_script(self, product: dict, style: str = "痛点开场",
                     objection: str = "再看看") -> dict:
-        """生成完整促单话术"""
+        name = product.get("name", "")
+        script = PRODUCT_SCRIPTS.get(name, {})
         return {
-            "开场": self.generate_opening(product, style),
-            "卖点说明": f"{product['name']} — ¥{product['price']:.2f} · 高品质 · 手工定制",
+            "开场": script.get("开场", ""),
+            "卖点说明": script.get("卖点", ""),
             "异议处理": self.handle_objection(product, objection),
             "促单结束": self.generate_closer(product),
         }
