@@ -359,7 +359,36 @@ elif page == "库存监控":
 # ═══════════════════════════════════════════
 elif page == "销售自动化":
     st.title(T("多智能体销售自动化","Multi-Agent Sales Pipeline"))
-    st.caption("Scout → Price → Copy → Monitor 四Agent全自动流水线")
+    st.caption(T("Scout选品→Price定价→Copy文案→Monitor监控 四Agent流水线","Scout→Price→Copy→Monitor Pipeline"))
+
+    # 操作指引
+    with st.expander(T("操作指引","How it works"), expanded=False):
+        st.markdown(T("""
+        **流程说明：**
+        1. **Scout 选品侦察** — 自动扫描产品池，多维度评分排序，找出最优选品
+        2. **Price 智能定价** — 为TOP5产品计算成本拆解+建议售价+利润模拟
+        3. **Copy 文案生成** — 为定价后的产品生成SEO/社交/促销三套营销文案
+        4. **Monitor 库存监控** — 巡检库存状态，标注断货/低库存/利润率不达标
+        
+        **操作步骤：**
+        - 调整目标利润率（建议45%起步）
+        - 选择目标市场（影响区域化建议）
+        - 点击「启动全流程」→ 等待4个Agent依次执行
+        - 查看结果Tabs：评分→定价→文案→监控
+        """,
+        """
+        **How it works:**
+        1. **Scout** — Auto-scan products, multi-dimension scoring & ranking
+        2. **Price** — Cost breakdown + suggested price + profit simulation for TOP5
+        3. **Copy** — Generate SEO/social/sales copy for priced products
+        4. **Monitor** — Check inventory health, flag issues
+        
+        **Steps:**
+        - Adjust target margin (recommend 45%)
+        - Select target market (affects regional suggestions)
+        - Click Start → wait for 4 agents to execute
+        - Check result tabs: Scoring→Pricing→Copy→Monitor
+        """))
 
     # 产品池
     PRODUCTS = [
@@ -372,68 +401,99 @@ elif page == "销售自动化":
 
     # 控制面板
     with st.container(border=True):
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
         with c1:
-            target = st.slider(T("目标利润率","Target Margin"), 0.25, 0.60, 0.45, 0.05, format="%.0f%%")
+            target_pct = st.slider(T("目标利润率","Target Margin"), 25, 60, 45, 5,
+                                  format="%d%%",
+                                  help=T("建议45%起步，确保高于28%红线","Start at 45%, stay above 28% redline"))
         with c2:
-            region = st.selectbox(T("目标市场","Region"), ["北美","欧洲","东南亚","日韩","澳洲"])
-        with c3:
-            st.metric(T("产品数","Products"), len(PRODUCTS))
-            st.metric(T("Agent数","Agents"), "4")
+            region = st.selectbox(T("目标市场","Target Market"), ["北美","欧洲","东南亚","日韩","澳洲"])
+        st.caption(T(f"当前产品池：{len(PRODUCTS)}个SKU | 利润率目标：{target_pct}%",
+                     f"Product pool: {len(PRODUCTS)} SKUs | Target margin: {target_pct}%"))
 
-    # 流水线步骤预览
+    # 流水线预览
     st.markdown(T("**流水线**","**Pipeline**"))
     steps = st.columns(4)
-    agent_names = [("Scout","🔍",T("选品侦察","Scout")),("Price","💰",T("智能定价","Price")),("Copy","✍️",T("文案生成","Copy")),("Monitor","📊",T("库存监控","Monitor"))]
-    for i, (name, icon, label) in enumerate(agent_names):
+    for i, (name, icon, label_cn, label_en, hint_cn, hint_en) in enumerate([
+        ("Scout","🔍","选品侦察","Scout","多维评分排序","Multi-dim scoring"),
+        ("Price","💰","智能定价","Price","成本拆解+利润模拟","Cost breakdown+sim"),
+        ("Copy","✍️","文案生成","Copy","SEO+社交+促销","SEO+social+sales"),
+        ("Monitor","📊","库存监控","Monitor","异常巡检+趋势预测","Alert+trade forecast"),
+    ]):
         with steps[i]:
-            st.markdown(f"**{icon} {label}**")
-            st.caption(name)
+            st.markdown(f"**{icon} {T(label_cn, label_en)}**")
+            st.caption(T(hint_cn, hint_en))
 
     # 执行
     if st.button(T("启动全流程","Start Pipeline"), type="primary", use_container_width=True):
         pipeline = SalesPipeline()
         with st.spinner(T("Agent流水线执行中...","Pipeline running...")):
-            state = pipeline.run(PRODUCTS, target, region)
+            state = pipeline.run(PRODUCTS, target_pct/100, region)
 
-        # 结果展示
         st.success(T(f"全流程完成！({state.started_at} → {state.completed_at})",
                      f"Pipeline complete! ({state.started_at} → {state.completed_at})"))
 
-        # 逐步结果
-        tab1, tab2, tab3, tab4 = st.tabs([T("选品评分","Scoring"),T("定价方案","Pricing"),T("营销内容","Copy"),T("监控报告","Monitor")])
+        tab1, tab2, tab3, tab4 = st.tabs([
+            T("选品评分","Scoring"),T("定价方案","Pricing"),
+            T("营销内容","Copy"),T("监控报告","Monitor")])
 
         with tab1:
             if state.scored:
                 sd = pd.DataFrame([{"Product":r.product_name,"Score":r.final_score,
-                                    "Margin":r.margin_score,"Comp":r.competition_score} for r in state.scored])
+                                    "Margin":r.margin_score,"Comp":r.competition_score,
+                                    "Trend":r.trend_score,"Repur":r.repurchase_score} for r in state.scored])
                 st.dataframe(sd, use_container_width=True, hide_index=True,
                             column_config={"Score":st.column_config.ProgressColumn(format="%.1f",min_value=0,max_value=100)})
+                st.bar_chart(sd.set_index("Product")["Score"], use_container_width=True)
 
         with tab2:
             if state.priced:
                 pd_data = pd.DataFrame(state.priced)
-                st.dataframe(pd_data[["name","suggested_price","profit","margin","above_redline"]],
-                            use_container_width=True, hide_index=True)
+                st.dataframe(pd_data, use_container_width=True, hide_index=True,
+                            column_config={"margin":st.column_config.ProgressColumn(format="%.1%",min_value=0,max_value=1)})
+                # 利润率达标状态
+                ok = sum(1 for p in state.priced if p["above_redline"])
+                st.metric(T("达标率","Pass Rate"), f"{ok}/{len(state.priced)}",
+                         delta=T("全部达标" if ok==len(state.priced) else f"{len(state.priced)-ok}个未达标","All pass" if ok==len(state.priced) else f"{len(state.priced)-ok} below"),
+                         delta_color="normal" if ok==len(state.priced) else "inverse")
 
         with tab3:
             if state.copy:
                 for c in state.copy:
                     with st.expander(c["name"]):
-                        st.markdown(f"**SEO文案**\n{c['seo']}")
+                        st.markdown(f"**SEO**\n{c['seo']}")
                         st.divider()
                         st.markdown(f"**社交种草**\n{c['social']}")
                         st.divider()
-                        st.markdown(f"**促单话术**\n{c['script']['开场']}")
+                        st.markdown(f"**销售转化**\n{c['script']['开场']}")
 
         with tab4:
             if state.monitor:
                 for m in state.monitor:
-                    st.warning(f"**{m['name']}**: {'; '.join(m['issues'])}")
+                    with st.container(border=True):
+                        # 标记严重程度
+                        has_urgent = any("断货" in i or "OOS" in i or "不达标" in i for i in m["issues"])
+                        if has_urgent:
+                            st.error(f"**{m['name']}**")
+                        else:
+                            st.warning(f"**{m['name']}**")
+                        for issue in m["issues"]:
+                            st.markdown(f"- {issue}")
+
+                        # 趋势建议（联动选品评分）
+                        prod = next((p for p in PRODUCTS if p["name"]==m["name"]), None)
+                        if prod:
+                            scorer = ProductScorer()
+                            ps = scorer.evaluate(prod)
+                            if ps.final_score >= 70:
+                                st.success(T(f"评分{ps.final_score}分 → 建议保留并优先补货","Score {ps.final_score} → Keep & prioritize restock"))
+                            elif ps.final_score >= 50:
+                                st.info(T(f"评分{ps.final_score}分 → 维持现有库存，观察2周趋势","Score {ps.final_score} → Maintain stock, observe 2-week trend"))
+                            else:
+                                st.error(T(f"评分{ps.final_score}分 → 建议降价清仓或退市","Score {ps.final_score} → Suggest clearance or delist"))
             else:
                 st.success(T("所有产品正常","All products normal"))
 
-        # 执行日志
         with st.expander(T("执行日志","Execution Log")):
             for log in state.logs:
                 st.markdown(f"`{log}`")
