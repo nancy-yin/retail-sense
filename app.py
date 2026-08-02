@@ -156,21 +156,54 @@ if page == "工作台":
 elif page == "选品评分":
     st.title(T("产品选品评分","Product Scoring"))
 
-    # 区域选择
+    # 区域选择 — 卡片式
     with st.container(border=True):
         st.markdown(T("**目标市场**","**Target Market**"))
-        region = st.selectbox(T("选择区域","Region"), all_regions(), key="region_sel")
+        if "sel_region" not in st.session_state:
+            st.session_state.sel_region = "北美"
+
+        regions_list = all_regions()
+        cols = st.columns(len(regions_list))
+        region_colors = {"北美":"#1a73e8","欧洲":"#4285f4","东南亚":"#f4b400","日韩":"#ea4335","澳洲":"#34a853"}
+        for i, (col, rname) in enumerate(zip(cols, regions_list)):
+            with col:
+                rd = get_region(rname)
+                is_sel = st.session_state.sel_region == rname
+                border = f"2px solid {region_colors[rname]}" if is_sel else "1px solid #ddd"
+                bg = f"{region_colors[rname]}15" if is_sel else "#fff"
+                st.markdown(f"""
+                <div style="border:{border};border-radius:4px;padding:10px;text-align:center;background:{bg};cursor:pointer;min-height:90px;">
+                    <div style="font-weight:600;font-size:14px;">{rname}</div>
+                    <div style="font-size:11px;color:#666;margin-top:4px;">{', '.join(rd['countries'][:3]) if rd else ''}</div>
+                    <div style="font-size:10px;color:#888;margin-top:2px;">{rd['avg_margin'] if rd else ''}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                if st.button(f"选择{rname}", key=f"reg_{i}", use_container_width=True):
+                    st.session_state.sel_region = rname
+                    st.rerun()
+
+        region = st.session_state.sel_region
         rd = get_region(region)
         if rd:
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2, c3 = st.columns(3)
             c1.metric(T("平台","Platforms"), len(rd["platforms"]))
             c2.metric(T("利润率","Margin"), rd["avg_margin"])
             c3.metric(T("竞争度","Comp"), rd["competition"])
-            c4.metric(T("趋势","Trend"), rd["trends"][:25]+"...")
 
-        with st.expander(T("近期活动","Upcoming Events")):
-            for m, e in upcoming_events(region):
-                st.markdown(f"- **{m}** {e}")
+        with st.expander(T("近期活动与上品建议","Events & Listing Guide"), expanded=True):
+            for item in upcoming_events(region):
+                if len(item) == 5:
+                    m, e, desc, idx, tip = item
+                    score = int(idx.replace("上品指数:",""))
+                    color = "#34a853" if score>=90 else ("#f4b400" if score>=80 else "#ea4335")
+                    st.markdown(f"""
+                    <div style="border-left:3px solid {color};padding:6px 12px;margin:6px 0;background:#fafafa;border-radius:2px;">
+                        <span style="font-weight:600;font-size:13px;">{m} · {e}</span>
+                        <span style="background:{color};color:white;padding:1px 6px;border-radius:2px;font-size:11px;margin-left:8px;">{idx}</span><br>
+                        <span style="font-size:12px;color:#555;">{desc}</span><br>
+                        <span style="font-size:12px;color:{color};">{tip}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
 
     # 方法论
     with st.expander(T("评分方法论与数据来源","Methodology"), expanded=False):
@@ -283,14 +316,14 @@ elif page == "定价模型":
 elif page == "库存监控":
     st.title(T("库存监控","Inventory Monitor"))
 
-    if st.session_state.use_company and inv:
+    if st.session_state.use_company and company:
         st.success(T(f"数据源：{company['company']}","Source: "+company['company_en']))
     else:
         st.info(T("手动模式","Manual mode"))
         inv = [
-            {"sku":"BP-001","name":"刻字狗牌","name_en":"Dog Tag","qty":45,"cost":2.80,"price":12.99,"daily_avg":8.5,"lead_days":3},
+            {"sku":"BP-001","name":"刻字狗牌","name_en":"Engraved Dog Tag","qty":45,"cost":2.80,"price":12.99,"daily_avg":8.5,"lead_days":3},
             {"sku":"BP-002","name":"发光项圈","name_en":"LED Collar","qty":12,"cost":5.50,"price":24.99,"daily_avg":6.2,"lead_days":5},
-            {"sku":"BP-003","name":"珐琅名牌","name_en":"Enamel Plate","qty":120,"cost":3.20,"price":16.99,"daily_avg":3.1,"lead_days":3},
+            {"sku":"BP-003","name":"珐琅名牌","name_en":"Enamel Nameplate","qty":120,"cost":3.20,"price":16.99,"daily_avg":3.1,"lead_days":3},
             {"sku":"BP-004","name":"牵引绳套装","name_en":"Leash Set","qty":0,"cost":4.50,"price":22.99,"daily_avg":4.0,"lead_days":4},
             {"sku":"BP-005","name":"换牙零食","name_en":"Teething Treats","qty":8,"cost":3.00,"price":11.99,"daily_avg":15.0,"lead_days":2},
         ]
@@ -303,13 +336,22 @@ elif page == "库存监控":
         safety = max(1, round(daily*7))
         reorder_pt = safety + round(daily*lead)
         reorder_qty = max(round(daily), reorder_pt - qty) if qty < reorder_pt else 0
-        status = "OOS" if qty==0 else ("Low" if qty<safety else "Normal")
 
-        rows.append({"Product":pname(i),"SKU":i.get("sku",""),"Qty":qty,"Daily":f"{daily:.1f}",
-                     "Safety":safety,"Reorder":reorder_qty,"Status":status})
+        status_cn = "断货" if qty==0 else ("低库存" if qty<safety else "正常")
+        status_en = "OOS" if qty==0 else ("Low" if qty<safety else "Normal")
+
+        rows.append({
+            T("产品","Product"): pname(i),
+            "SKU": i.get("sku",""),
+            T("库存","Qty"): qty,
+            T("日均","Daily"): f"{daily:.1f}",
+            T("安全库存","Safety"): safety,
+            T("建议补货","Reorder"): reorder_qty,
+            T("状态","Status"): status_en if is_en else status_cn,
+        })
 
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-    st.bar_chart(pd.DataFrame({pname(i):[i.get("qty",0)] for i in inv}, index=["Qty"]).T, use_container_width=True)
+    st.bar_chart(pd.DataFrame({pname(i):[i.get("qty",0)] for i in inv}, index=[T("库存","Qty")]).T, use_container_width=True)
 
 st.divider()
 st.image(load_image("footer"), use_container_width=True)
