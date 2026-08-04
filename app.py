@@ -16,6 +16,7 @@ from retail_sense.regions import *
 from retail_sense.agent import VirtualAgent
 from retail_sense.agents import SalesPipeline
 from retail_sense.cases import get_cases
+from retail_sense.product_images import get_img
 
 st.set_page_config(page_title="RetailSense", page_icon="🐾", layout="wide")
 
@@ -186,14 +187,19 @@ if page == "工作台":
             </div>
             """, unsafe_allow_html=True)
 
-    # 出库趋势（保留轻量图表）
+    # 出库趋势（轻量文字+最近3天）
     st.divider()
     st.subheader(T("近期出库","Recent Sales"))
     if txns:
         out_txns = [t for t in txns if t["type"]=="out"]
-        dates = sorted(set(t["date"] for t in out_txns))[-7:]
-        chart = {d: sum(t["revenue"] for t in out_txns if t["date"]==d) for d in dates}
-        st.bar_chart(pd.DataFrame({T("营收","Revenue"):chart}), use_container_width=True, height=200)
+        recent = sorted(out_txns, key=lambda t: t["date"], reverse=True)[:5]
+        out_cols = st.columns(len(recent) if recent else 1)
+        for j, txn in enumerate(recent):
+            with out_cols[j]:
+                st.markdown(f"""<div class="card-hover ok" style="min-height:50px;text-align:center;">
+                    <div style="font-size:11px;color:#888;">{txn['date']}</div>
+                    <div style="font-size:18px;font-weight:700;color:#FF8C42;">¥{txn['revenue']:,.0f}</div>
+                    <div style="font-size:10px;color:#aaa;">{txn.get('product','')}</div></div>""", unsafe_allow_html=True)
     else:
         st.caption(T("暂无数据","No data"))
 
@@ -263,10 +269,11 @@ elif page == "选品评分":
         with st.expander(label):
             cimg, c1, c2, c3 = st.columns([0.8, 2, 2, 2])
             with cimg:
-                if img_path and os.path.exists(img_path):
-                    st.image(img_path, width=80)
+                b64 = get_img(p.get("img",""))
+                if b64:
+                    st.markdown(f'<img src="data:image/jpeg;base64,{b64}" style="width:70px;height:70px;border-radius:6px;object-fit:cover;">', unsafe_allow_html=True)
                 else:
-                    st.markdown(f"<div style='width:80px;height:80px;background:#f5f0eb;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:28px;'>🐾</div>", unsafe_allow_html=True)
+                    st.markdown("🐾")
             with c1:
                 ps = scorer.evaluate(p)
                 # 卡片式评分（替代柱状图）
@@ -365,18 +372,16 @@ elif page == "库存监控":
             img_html = f'<img src="data:image/jpeg;base64,..." style="display:none">'  # placeholder
 
         rows.append({
-            T("图片",""): "🐾",
             T("产品","Product"): pname(i),
             "SKU": i.get("sku",""),
             T("库存","Qty"): qty,
             T("日均","Daily"): daily,
             T("安全库存","Safety"): safety,
             T("补货","Reorder"): reorder_qty,
-            T("状态","Status"): f'<span style="color:{status_color};font-weight:600;">{status_en if is_en else status_cn}</span>',
+            T("状态","Status"): status_en if is_en else status_cn,
         })
 
-    df = pd.DataFrame(rows)
-    st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
     # 库存卡片（替代柱状图）
     st.divider()
@@ -386,12 +391,12 @@ elif page == "库存监控":
         with inv_cards[idx]:
             qty = item.get("qty",0)
             status = "ok" if qty>20 else ("warn" if qty>0 else "danger")
-            img_path = os.path.join(PRODUCT_IMG_DIR, f"{item.get('img','')}.jpg")
-            st.markdown(f"""<div class="card-hover {status}" style="min-height:70px;">
+            b64 = get_img(item.get("img",""))
+            if b64:
+                st.markdown(f'<img src="data:image/jpeg;base64,{b64}" style="width:50px;height:50px;border-radius:4px;object-fit:cover;margin-bottom:4px;">', unsafe_allow_html=True)
+            st.markdown(f"""<div class="card-hover {status}" style="min-height:50px;">
                 <div style="font-size:22px;font-weight:800;">{qty}</div>
                 <div style="font-size:11px;color:#888;">{pname(item)}</div></div>""", unsafe_allow_html=True)
-            if os.path.exists(img_path):
-                st.image(img_path, width=60)
 
 # ══ 案例库 ══
 elif page == "案例库":
@@ -460,7 +465,8 @@ elif page == "销售自动化":
                 <span style="background:#e8f5e9;color:#2e7d32;padding:1px 6px;border-radius:2px;font-size:9px;">{T('Agent','Agent')}</span></div>""", unsafe_allow_html=True)
 
     with st.expander(T("Agent 架构","Agent Architecture"), expanded=False):
-        st.markdown(T("Scout→Price→Copy→Monitor 四Agent串联\n当前: 规则引擎 | 完整模式: 接入LLM API","Scout→Price→Copy→Monitor pipeline\nCurrent: rule engine | Full: connect LLM API"))
+        st.caption(T("Scout→Price→Copy→Monitor 四Agent串联 | 当前: 规则引擎 | 完整模式: LLM API",
+                     "Scout→Price→Copy→Monitor | Current: rule engine | Full: LLM API"))
 
     if st.button(T("启动全流程","Start Pipeline"), type="primary", use_container_width=True):
         pipeline = SalesPipeline()
