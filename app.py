@@ -476,26 +476,36 @@ elif page == "销售自动化":
         t1,t2,t3,t4 = st.tabs([T("评分","Scoring"),T("定价","Pricing"),T("文案","Copy"),T("监控","Monitor")])
         with t1:
             if state.scored:
-                sd = pd.DataFrame([{T("产品","P"):r.product_name,T("评分","S"):f"{r.final_score:.0f}"} for r in state.scored])
+                sd = pd.DataFrame([{T("产品","Product"):r.product_name,T("评分","Score"):f"{r.final_score:.0f}",
+                                    T("毛利","Margin"):r.margin_score,T("竞争","Comp"):r.competition_score,
+                                    T("趋势","Trend"):r.trend_score,T("复购","Repur"):r.repurchase_score} for r in state.scored])
                 st.dataframe(sd, use_container_width=True, hide_index=True)
         with t2:
             if state.priced:
                 pd_data = pd.DataFrame(state.priced)
-                pd_data_display = pd_data.rename(columns={"name":T("产品","P"),"suggested_price":T("售价","Price"),"profit":T("利润","Profit"),"margin":T("利润率","Margin")})
+                pd_data_display = pd_data.rename(columns={"name":T("产品","Product"),"suggested_price":T("售价","Price"),
+                    "profit":T("利润","Profit"),"margin":T("利润率","Margin"),"above_redline":T("达标","Pass")})
                 st.dataframe(pd_data_display, use_container_width=True, hide_index=True)
                 ok = sum(1 for p in state.priced if p["above_redline"])
-                st.metric(T("达标率","Pass"), f"{ok}/{len(state.priced)}")
+                st.metric(T("达标率","Pass"), f"{ok}/{len(state.priced)}",
+                         delta=T("全部达标" if ok==len(state.priced) else f"{len(state.priced)-ok}个未达标","All" if ok==len(state.priced) else f"{len(state.priced)-ok} below"))
         with t3:
             if state.copy:
                 for c in state.copy:
-                    with st.expander(c["name"]):
-                        st.markdown(c['seo'][:200]+"...")
+                    with st.expander(f"📝 {c['name']}"):
+                        st.markdown(f"**SEO 文案**\n{c['seo']}")
+                        st.divider()
+                        st.markdown(f"**{T('社交种草','Social')}**\n{c['social']}")
+                        st.divider()
+                        st.markdown(f"**{T('销售转化','Sales Script')}**\n{c['script'].get('开场','')}")
         with t4:
             if state.monitor:
-                for m in state.monitor[:3]:
-                    st.warning(f"**{m['name']}**: {'; '.join(m['issues'])}")
+                for m in state.monitor:
+                    with st.container(border=True):
+                        has_urgent = any("断货" in i for i in m["issues"])
+                        (st.error if has_urgent else st.warning)(f"**{m['name']}**: {'; '.join(m['issues'])}")
             else:
-                st.success(T("正常","All normal"))
+                st.success(T("所有产品正常","All products normal"))
 
 st.divider()
 st.image(load_image("footer"), use_container_width=True)
