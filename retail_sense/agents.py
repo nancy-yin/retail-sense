@@ -73,7 +73,7 @@ class PriceAgent:
 
             state.priced.append({
                 "name": r.product_name,
-                "cost": prod["cost"],
+                "cost": round(prod["cost"]),
                 "suggested_price": result["suggested_price"],
                 "profit": result["profit"],
                 "margin": result["margin_rate"],
