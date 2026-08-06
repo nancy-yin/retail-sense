@@ -99,12 +99,19 @@ CHANGELOG = """
 **v2.0 (2026-08-04)** 📊 仪表盘+区域分析+虚拟管家
 """
 
+# ── 预加载公司数据（侧边栏要用）──
+available_companies = list_companies()
+current_company_file = st.session_state.company_file if st.session_state.company_file in available_companies else (available_companies[0] if available_companies else "")
+company = load_company_data(current_company_file) if st.session_state.use_company and current_company_file else None
+inv = get_inventory(company, st.session_state.use_company)
+txns = get_transactions(company, st.session_state.use_company)
+
 # ── 侧边栏 ──
 with st.sidebar:
-    st.image(load_image("sidebar"), use_container_width=True)
+    st.image(load_image("sidebar"), width='stretch')
     for name in ["工作台","选品评分","定价模型","库存监控","案例库","销售自动化"]:
         kind = "primary" if st.session_state.nav == name else "secondary"
-        if st.button(name, use_container_width=True, type=kind):
+        if st.button(name, width='stretch', type=kind):
             st.session_state.nav = name; st.rerun()
     st.divider()
     with st.expander(T("设置","Settings")):
@@ -140,12 +147,6 @@ with st.sidebar:
     st.caption(f"{VERSION} · MIT")
 
 page = st.session_state.nav
-# 加载当前选择的公司
-available_companies = list_companies()
-current_company_file = st.session_state.company_file if st.session_state.company_file in available_companies else (available_companies[0] if available_companies else "")
-company = load_company_data(current_company_file) if st.session_state.use_company and current_company_file else None
-inv = get_inventory(company, st.session_state.use_company)
-txns = get_transactions(company, st.session_state.use_company)
 agent = VirtualAgent()
 
 # ══ 工作台 ══
@@ -240,7 +241,7 @@ elif page == "选品评分":
                     <div style="font-weight:600;font-size:12px;">{rname}</div>
                     <div style="font-size:10px;color:#666;margin-top:2px;">{', '.join(rd['countries'][:3]) if rd else ''}</div>
                     <div style="font-size:9px;color:#888;margin-top:1px;">{rd['avg_margin'] if rd else ''}</div></div>""", unsafe_allow_html=True)
-                if st.button(T("选择","Select")+rname, key=f"reg_{i}", use_container_width=True):
+                if st.button(T("选择","Select")+rname, key=f"reg_{i}", width='stretch'):
                     st.session_state.sel_region = rname; st.rerun()
 
         region = st.session_state.sel_region
@@ -317,7 +318,7 @@ elif page == "选品评分":
             rows.append({T("产品","Product"):r.product_name,T("评分","Score"):f"{r.final_score:.0f}",
                          T("毛利","M"):r.margin_score,T("竞争","C"):r.competition_score,
                          T("趋势","T"):r.trend_score,T("复购","R"):r.repurchase_score})
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
 
 # ══ 定价模型 ══
 elif page == "定价模型":
@@ -383,20 +384,14 @@ elif page == "库存监控":
 
     rows = []
     for i in inv:
-        qty = i.get("qty",0)
-        daily = int(i.get("daily_avg",1))
-        lead = i.get("lead_days",3)
-        safety = max(1, round(daily*7))
-        reorder_qty = max(round(daily), safety + round(daily*lead) - qty) if qty < safety else 0
-        status_cn = "断货" if qty==0 else ("低库存" if qty<safety else "正常")
-        status_en = "OOS" if qty==0 else ("Low" if qty<safety else "Normal")
-        status_color = "#ea4335" if qty==0 else ("#f4b400" if qty<safety else "#34a853")
-
-        # 产品图片
-        img_html = ""
-        img_path = os.path.join(PRODUCT_IMG_DIR, f"{i.get('img','')}.jpg")
-        if os.path.exists(img_path):
-            img_html = f'<img src="data:image/jpeg;base64,..." style="display:none">'  # placeholder
+        qty = int(i.get("qty", 0))
+        daily = int(i.get("daily_avg", 1))
+        lead = i.get("lead_days", 3)
+        safety = max(1, round(daily * 7))
+        reorder_qty = max(round(daily), safety + round(daily * lead) - qty) if qty < safety else 0
+        status_cn = "断货" if qty == 0 else ("低库存" if qty < safety else "正常")
+        status_en = "OOS" if qty == 0 else ("Low" if qty < safety else "Normal")
+        status_color = "#ea4335" if qty == 0 else ("#f4b400" if qty < safety else "#34a853")
 
         rows.append({
             T("产品","Product"): pname(i),
@@ -408,7 +403,7 @@ elif page == "库存监控":
             T("状态","Status"): status_en if is_en else status_cn,
         })
 
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
 
     # 库存卡片（替代柱状图）
     st.divider()
@@ -495,7 +490,7 @@ elif page == "销售自动化":
         st.caption(T("Scout→Price→Copy→Monitor 四Agent串联 | 当前: 规则引擎 | 完整模式: LLM API",
                      "Scout→Price→Copy→Monitor | Current: rule engine | Full: LLM API"))
 
-    if st.button(T("启动全流程","Start Pipeline"), type="primary", use_container_width=True):
+    if st.button(T("启动全流程","Start Pipeline"), type="primary", width='stretch'):
         pipeline = SalesPipeline()
         with st.spinner(T("执行中...","Running...")):
             state = pipeline.run(PRODUCTS_A, target_pct/100, region)
@@ -506,13 +501,13 @@ elif page == "销售自动化":
                 sd = pd.DataFrame([{T("产品","Product"):r.product_name,T("评分","Score"):f"{r.final_score:.0f}",
                                     T("毛利","Margin"):r.margin_score,T("竞争","Comp"):r.competition_score,
                                     T("趋势","Trend"):r.trend_score,T("复购","Repur"):r.repurchase_score} for r in state.scored])
-                st.dataframe(sd, use_container_width=True, hide_index=True)
+                st.dataframe(sd, width='stretch', hide_index=True)
         with t2:
             if state.priced:
                 pd_data = pd.DataFrame(state.priced)
                 pd_data_display = pd_data.rename(columns={"name":T("产品","Product"),"suggested_price":T("售价","Price"),
                     "profit":T("利润","Profit"),"margin":T("利润率","Margin"),"above_redline":T("达标","Pass")})
-                st.dataframe(pd_data_display, use_container_width=True, hide_index=True)
+                st.dataframe(pd_data_display, width='stretch', hide_index=True)
                 ok = sum(1 for p in state.priced if p["above_redline"])
                 st.metric(T("达标率","Pass"), f"{ok}/{len(state.priced)}",
                          delta=T("全部达标" if ok==len(state.priced) else f"{len(state.priced)-ok}个未达标","All" if ok==len(state.priced) else f"{len(state.priced)-ok} below"))
@@ -535,4 +530,4 @@ elif page == "销售自动化":
                 st.success(T("所有产品正常","All products normal"))
 
 st.divider()
-st.image(load_image("footer"), use_container_width=True)
+st.image(load_image("footer"), width='stretch')

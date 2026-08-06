@@ -3,6 +3,8 @@ RetailSense — 区域市场分析
 跨境平台数据 + Top5国家 + 当地活动日历
 """
 
+from __future__ import annotations
+
 REGIONS = {
     "北美": {
         "countries": ["美国","加拿大"],

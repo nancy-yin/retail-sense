@@ -2,6 +2,8 @@
 RetailSense — 数据加载器
 支持手动数据 或 接入外部公司库存（多公司切换）
 """
+
+from __future__ import annotations
 import json
 import os
 from datetime import datetime, timedelta

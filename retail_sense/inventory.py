@@ -3,6 +3,8 @@ RetailSense — 库存预测
 周转天数 + 补货建议 + 滞销预警
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -33,13 +35,6 @@ class InventoryStatus:
     def reorder_point(self) -> int:
         """补货触发点：安全库存 + 进货周期内的销量"""
         return self.safety_stock + round(self.daily_sales * self.lead_days)
-
-    @property
-    def reorder_quantity(self) -> int:
-        """建议补货量"""
-        if self.current_stock >= self.reorder_point:
-            return 0
-        return self.reorder_point - self.current_stock + self.safety_stock
 
     @property
     def reorder_quantity(self) -> int:
