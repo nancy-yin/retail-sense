@@ -20,7 +20,11 @@ from retail_sense.product_images import get_img
 
 st.set_page_config(page_title="RetailSense", page_icon="🐾", layout="wide")
 
-# ── 宠物温馨风 CSS（缩小字体+悬停+渐变）──
+# ── 必须最前：初始化状态 ──
+if "font_size" not in st.session_state: st.session_state.font_size = "13px"
+if "lang" not in st.session_state: st.session_state.lang = "zh"
+
+# ── 宠物温馨风 CSS ──
 st.markdown(f"""
 <style>
 /* 全局字体 */
@@ -82,11 +86,9 @@ def product_img(name):
 for key in DEFAULT_IMAGES:
     if f"img_{key}" not in st.session_state: st.session_state[f"img_{key}"] = DEFAULT_IMAGES[key]
 
-if "lang" not in st.session_state: st.session_state.lang = "zh"
 if "nav" not in st.session_state: st.session_state.nav = "工作台"
 if "use_company" not in st.session_state: st.session_state.use_company = True
 if "company_file" not in st.session_state: st.session_state.company_file = "萌爪宠物用品.json"
-if "font_size" not in st.session_state: st.session_state.font_size = "13px"
 if "agent_msg" not in st.session_state: st.session_state.agent_msg = []
 if "first_visit" not in st.session_state: st.session_state.first_visit = True
 
@@ -337,24 +339,34 @@ elif page == "定价模型":
             plat = st.number_input(T("平台费","Platform Fee"), value=0.85, step=0.10, format="%.2f")
             target = st.slider(T("目标利润率","Target Margin"), 0.20, 0.70, 0.45, 0.05, format="%.0f%%")
 
+        st.divider()
+        cc1, cc2 = st.columns(2)
+        with cc1:
+            currency = st.selectbox(T("货币单位","Currency"),
+                                   ["¥ CNY","$ USD","€ EUR","£ GBP","¥ JPY","A$ AUD","C$ CAD"],
+                                   index=1 if is_en else 0)
+            symbol = currency.split()[0]
+        with cc2:
+            st.caption(T(f"当前单位：{symbol}（数值不换算，纯展示）",
+                         f"Unit: {symbol} (no conversion, display only)"))
+
     if st.button(T("计算定价","Calculate"), type="primary"):
         cost = CostBreakdown(raw, proc, pack, ship, plat)
         model = PricingModel()
         result = model.suggest_price(cost, target)
 
-        # 成本卡片（替代柱状图）
         items = [(T("裸件","Raw"),raw),(T("加工","Proc"),proc),(T("包装","Pack"),pack),(T("物流","Ship"),ship),(T("平台","Plat"),plat)]
         cc = st.columns(5)
         for i, (lbl, val) in enumerate(items):
             with cc[i]:
                 st.markdown(f"""<div class="card-hover" style="min-height:50px;">
-                    <div style="font-size:16px;font-weight:700;color:#FF8C42;">¥{val:.2f}</div>
+                    <div style="font-size:16px;font-weight:700;color:#FF8C42;">{symbol}{val:.2f}</div>
                     <div style="font-size:10px;color:#888;">{lbl}</div></div>""", unsafe_allow_html=True)
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric(T("总成本","Total Cost"), f"¥{result['total_cost']:.2f}")
-        m2.metric(T("建议售价","Price"), f"¥{result['suggested_price']:.2f}")
-        m3.metric(T("利润","Profit"), f"¥{result['profit']:.2f}")
+        m1.metric(T("总成本","Total Cost"), f"{symbol}{result['total_cost']:.2f}")
+        m2.metric(T("建议售价","Price"), f"{symbol}{result['suggested_price']:.2f}")
+        m3.metric(T("利润","Profit"), f"{symbol}{result['profit']:.2f}")
         m4.metric(T("利润率","Margin"), f"{result['margin_rate']:.1%}",
                  delta=T("达标","OK") if result['above_redline'] else T("未达标","Low"),
                  delta_color="normal" if result['above_redline'] else "inverse")
