@@ -538,285 +538,277 @@ elif page == "物流配发":
     orders = get_mock_orders()
     warehouse = get_warehouse_inventory()
 
-    # ── 子导航 Tab ──
-    tab1, tab2, tab3 = st.tabs([
-        T("📋 订单看板","📋 Order Board"),
-        T("🤖 智能配货","🤖 Smart Allocation"),
-        T("📦 物流追踪","📦 Tracking"),
-    ])
+    # ── 初始化 session_state ──
+    if "logistics_page" not in st.session_state:
+        st.session_state.logistics_page = 1
+    if "alloc_results" not in st.session_state:
+        st.session_state.alloc_results = {}
+    if "logistics_expanded" not in st.session_state:
+        st.session_state.logistics_expanded = set()
+    if "tracking_cache" not in st.session_state:
+        st.session_state.tracking_cache = {}
 
-    # ═══════ Tab 1: 订单看板 ═══════
-    with tab1:
-        pending = [o for o in orders if o["status"] == "pending"]
-        picking = [o for o in orders if o["status"] == "picking"]
-        shipped = [o for o in orders if o["status"] == "shipped"]
+    # ── 顶部总览卡片 ──
+    pending = [o for o in orders if o["status"] == "pending"]
+    picking = [o for o in orders if o["status"] == "picking"]
+    shipped = [o for o in orders if o["status"] == "shipped"]
 
-        # 统计卡片
-        mc = st.columns(4)
-        mc[0].metric(T("总订单","Total"), len(orders))
-        mc[1].metric(T("待处理","Pending"), len(pending),
-                    delta=T(f"{len(pending)}单待配货",f"{len(pending)} awaiting"))
-        mc[2].metric(T("拣货中","Picking"), len(picking))
-        mc[3].metric(T("已发货","Shipped"), len(shipped))
+    mc = st.columns(4)
+    mc[0].metric(T("总订单","Total"), len(orders))
+    mc[1].metric(T("待处理","Pending"), len(pending),
+                delta=T(f"{len(pending)}单待配货",f"{len(pending)} awaiting"))
+    mc[2].metric(T("拣货中","Picking"), len(picking))
+    mc[3].metric(T("已发货","Shipped"), len(shipped))
 
-        st.divider()
+    st.divider()
 
-        # 三栏卡片布局
-        col1, col2, col3 = st.columns(3)
+    # ── 分页表格 ──
+    PER_PAGE = 10
+    total_pages = max(1, (len(orders) + PER_PAGE - 1) // PER_PAGE)
 
-        with col1:
-            st.subheader(T("🟡 待处理","🟡 Pending"))
-            if pending:
-                for o in pending:
-                    with st.container(border=True):
-                        items_text = "、".join([f"{it['name' if not is_en else 'name_en']}×{it['qty']}" for it in o["items"]])
-                        cust = o.get("customer_en" if is_en else "customer", o.get("customer",""))
-                        addr = o.get("address_en" if is_en else "address", o.get("address",""))
-                        priority_badge = "🔴" if o.get("priority") == "urgent" else ""
-                        st.markdown(f"**{o['order_id']}** {priority_badge}")
-                        st.caption(f"👤 {cust}")
-                        st.markdown(f"📦 {items_text}")
-                        st.caption(f"📍 {addr[:20]}...")
-                        st.caption(f"⏰ {o['created_at']}")
-                        if st.button(T("▶ 配货","▶ Allocate"), key=f"alloc_{o['order_id']}", type="primary"):
-                            result = allocate_order(o, warehouse)
-                            st.session_state[f"alloc_result_{o['order_id']}"] = result
-                            st.rerun()
-            else:
-                st.caption(T("暂无待处理订单","No pending orders"))
+    # 矫正页码
+    if st.session_state.logistics_page > total_pages:
+        st.session_state.logistics_page = total_pages
+    page = st.session_state.logistics_page
 
-        with col2:
-            st.subheader(T("🔵 拣货中","🔵 Picking"))
-            if picking:
-                for o in picking:
-                    with st.container(border=True):
-                        items_text = "、".join([f"{it['name' if not is_en else 'name_en']}×{it['qty']}" for it in o["items"]])
-                        cust = o.get("customer_en" if is_en else "customer", o.get("customer",""))
-                        st.markdown(f"**{o['order_id']}**")
-                        st.caption(f"👤 {cust}")
-                        st.markdown(f"📦 {items_text}")
-                        st.caption(f"⏰ {o['created_at']}")
-                        # 显示拣货进度条
-                        st.progress(0.65, text=T("拣货中...","Picking..."))
-            else:
-                st.caption(T("暂无拣货订单","No picking orders"))
+    start = (page - 1) * PER_PAGE
+    end = min(start + PER_PAGE, len(orders))
+    page_orders = orders[start:end]
 
-        with col3:
-            st.subheader(T("🟢 已发货","🟢 Shipped"))
-            if shipped:
-                for o in shipped:
-                    with st.container(border=True):
-                        items_text = "、".join([f"{it['name' if not is_en else 'name_en']}×{it['qty']}" for it in o["items"]])
-                        cust = o.get("customer_en" if is_en else "customer", o.get("customer",""))
-                        courier = o.get("courier_en" if is_en else "courier", o.get("courier",""))
-                        st.markdown(f"**{o['order_id']}**")
-                        st.caption(f"👤 {cust}")
-                        st.markdown(f"📦 {items_text}")
-                        st.caption(f"🚚 {courier} · {o.get('tracking_no','')}")
-                        st.caption(f"⏰ {o['created_at']}")
-                        # 追踪按钮
-                        with st.expander(T("📦 物流详情","📦 Tracking Details")):
-                            tracking = get_logistics_tracking(o.get("tracking_no",""))
-                            for evt in tracking["events"]:
-                                icon_map = {"待揽收":"📋","运输中":"🚛","派送中":"🏃","已签收":"✅",
-                                           "Awaiting Pickup":"📋","In Transit":"🚛","Out for Delivery":"🏃","Delivered":"✅"}
-                                icon = icon_map.get(evt.get("status_cn",""), "📍")
-                                st.markdown(f"{icon} **{evt['time']}** — {evt['status_cn' if not is_en else 'status_en']}")
-                                st.caption(evt.get("desc_cn" if not is_en else "desc_en",""))
-                            if tracking["eta"]:
-                                st.info(T(f"📅 预计到达：{tracking['eta']}",f"📅 ETA: {tracking['eta']}"))
-            else:
-                st.caption(T("暂无已发货订单","No shipped orders"))
+    # 表头
+    hdr = st.columns([2.2, 1.6, 2.2, 0.7, 1.1, 1.2, 0.8])
+    h_labels = [
+        T("订单号","Order ID"), T("客户","Customer"),
+        T("产品","Product"), T("数量","Qty"),
+        T("状态","Status"), T("操作","Action"),
+        T("展开","Expand"),
+    ]
+    for col, lbl in zip(hdr, h_labels):
+        with col:
+            st.markdown(f"**{lbl}**")
+    st.markdown("---")
 
-    # ═══════ Tab 2: 智能配货 ═══════
-    with tab2:
-        st.markdown(T("### 🤖 智能配货引擎","### 🤖 Smart Allocation Engine"))
-        st.caption(T("选择订单 → 自动匹配库存 + 库位标注 → 缺货警告","Select order → Auto-match inventory + location → Shortage alerts"))
+    # 数据行
+    for o in page_orders:
+        oid = o["order_id"]
+        cust = o.get("customer_en" if is_en else "customer", o.get("customer",""))
+        items_text = "、".join([f"{it['name' if not is_en else 'name_en']}×{it['qty']}" for it in o["items"]])
+        total_qty = sum(it["qty"] for it in o["items"])
 
-        # 配货表单
-        col_a, col_b = st.columns([2, 1])
-        with col_a:
-            pending_orders = [o for o in orders if o["status"] == "pending"]
-            if pending_orders:
-                order_options = {f"{o['order_id']} — {o.get('customer' if not is_en else 'customer_en', o.get('customer',''))}": o for o in pending_orders}
-                selected_label = st.selectbox(
-                    T("选择待配货订单","Select order to allocate"),
-                    list(order_options.keys())
-                )
-                selected_order = order_options[selected_label]
+        status_map = {
+            "pending": ("🟡 " + T("待处理","Pending"), "#f4b400"),
+            "picking": ("🔵 " + T("拣货中","Picking"), "#4285f4"),
+            "shipped": ("🟢 " + T("已发货","Shipped"), "#34a853"),
+        }
+        status_text, status_color = status_map.get(o["status"], ("❓", "#888"))
 
-                # 显示订单详情
-                st.markdown(T("**订单详情**","**Order Details**"))
-                items_str = "、".join([f"{it['name' if not is_en else 'name_en']}×{it['qty']}" for it in selected_order["items"]])
-                st.markdown(f"📦 {items_str}")
-                addr = selected_order.get("address_en" if is_en else "address", selected_order.get("address",""))
-                st.caption(f"📍 {addr}")
+        row_cols = st.columns([2.2, 1.6, 2.2, 0.7, 1.1, 1.2, 0.8])
 
-            with col_b:
-                if pending_orders and st.button(T("⚡ 执行智能配货","⚡ Smart Allocate"), type="primary", width="stretch"):
-                    result = allocate_order(selected_order, warehouse)
-                    st.session_state["selected_alloc_result"] = result
+        with row_cols[0]:
+            priority_badge = " 🔴" if o.get("priority") == "urgent" else ""
+            st.markdown(f"`{oid}`{priority_badge}")
+            st.caption(o["created_at"])
+
+        with row_cols[1]:
+            st.caption(cust)
+
+        with row_cols[2]:
+            st.caption(items_text if len(items_text) <= 30 else items_text[:27] + "...")
+
+        with row_cols[3]:
+            st.markdown(f"**{total_qty}**")
+
+        with row_cols[4]:
+            st.markdown(
+                f'<span style="color:{status_color};font-weight:600;font-size:12px;">{status_text}</span>',
+                unsafe_allow_html=True,
+            )
+
+        with row_cols[5]:
+            if o["status"] == "pending":
+                alloc_key = f"alloc_{oid}"
+                if st.button(T("配货","Alloc"), key=f"alloc_btn_{oid}", type="primary"):
+                    # 如果已配过跳转到结果页去重新配
+                    result = allocate_order(o, warehouse)
+                    st.session_state.alloc_results[oid] = result
+                    st.session_state.logistics_expanded.add(oid)
                     st.rerun()
+            elif o["status"] == "shipped":
+                if st.button(T("追踪","Track"), key=f"track_btn_{oid}"):
+                    if oid in st.session_state.logistics_expanded:
+                        st.session_state.logistics_expanded.discard(oid)
+                    else:
+                        st.session_state.logistics_expanded.add(oid)
+                        # 缓存追踪数据
+                        if oid not in st.session_state.tracking_cache:
+                            st.session_state.tracking_cache[oid] = get_logistics_tracking(o.get("tracking_no",""))
+                    st.rerun()
+            elif o["status"] == "picking":
+                st.caption(T("拣货中…","Picking…"))
 
-            if pending_orders and "selected_alloc_result" in st.session_state:
-                result = st.session_state["selected_alloc_result"]
-                st.divider()
-                st.markdown(T("### 📊 配货结果","### 📊 Allocation Result"))
-                st.markdown(f"**{T('订单号','Order ID')}:** {result['order_id']}")
-
-                if result["all_ok"]:
-                    st.success(T("✅ 全部配货成功！库存充足，可立即发货。","✅ All items allocated! Ready to ship."))
+        with row_cols[6]:
+            is_expanded = oid in st.session_state.logistics_expanded
+            toggle_label = "▲" if is_expanded else "▼"
+            if st.button(toggle_label, key=f"expand_{oid}"):
+                if is_expanded:
+                    st.session_state.logistics_expanded.discard(oid)
                 else:
-                    st.error(T("⚠️ 部分商品库存不足，请查看详情。","⚠️ Some items out of stock. Check details."))
+                    st.session_state.logistics_expanded.add(oid)
+                    if o["status"] == "shipped" and oid not in st.session_state.tracking_cache:
+                        st.session_state.tracking_cache[oid] = get_logistics_tracking(o.get("tracking_no",""))
+                st.rerun()
 
-                # 配货明细表
-                rows = []
+        # ── 行内展开：配货结果 ──
+        if o["status"] == "pending" and oid in st.session_state.alloc_results and oid in st.session_state.logistics_expanded:
+            result = st.session_state.alloc_results[oid]
+            with st.container(border=True):
+                if result["all_ok"]:
+                    st.success(T("✅ 配货成功 — 库存充足，可立即发货","✅ Allocated — Ready to ship"))
+                else:
+                    st.error(T("⚠️ 部分缺货 — 请查看明细","⚠️ Partial Shortage — Check details"))
                 for item in result["items"]:
-                    ok_label = "✅" if item["ok"] else "❌"
-                    rows.append({
-                        T("状态","Status"): ok_label,
-                        T("商品","Product"): item["name" if not is_en else "name_en"],
-                        "SKU": item["sku"],
-                        T("需求","Need"): item["needed"],
-                        T("可用","Avail"): item["available"],
-                        T("分配","Alloc"): item["allocated"],
-                        T("缺货","Short"): item["shortage"],
-                        T("库位","Location"): item["location"],
-                        T("区域","Zone"): item["zone"],
-                    })
-                st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
-
-                # 缺货警告
-                shortages = [item for item in result["items"] if not item["ok"]]
-                if shortages:
-                    st.divider()
-                    st.markdown(T("### 🚨 缺货商品","### 🚨 Shortage Items"))
-                    for s in shortages:
-                        st.error(
+                    icon = "✅" if item["ok"] else "❌"
+                    loc_str = f"{item['location']} ({item['zone' if not is_en else 'zone_en']})"
+                    if item["ok"]:
+                        st.markdown(
                             T(
-                                f"**{s['name']}** (SKU: {s['sku']}) — 需求 {s['needed']} 件，可用仅 {s['available']} 件，缺 {s['shortage']} 件 | 库位: {s['location']} ({s['zone']})",
-                                f"**{s['name_en']}** (SKU: {s['sku']}) — Need {s['needed']}, only {s['available']} available, short {s['shortage']} | Location: {s['location']} ({s['zone']})"
+                                f"{icon} **{item['name']}** — 配 {item['allocated']}/{item['needed']} 件 | 库位: {loc_str}",
+                                f"{icon} **{item['name_en']}** — {item['allocated']}/{item['needed']} pcs | Loc: {loc_str}",
                             )
                         )
-            else:
-                if not pending_orders:
-                    st.info(T("所有订单已处理完毕！","All orders processed!"))
-
-        # 仓库库存总览
-        st.divider()
-        st.markdown(T("### 🏭 仓库库存总览","### 🏭 Warehouse Overview"))
-        inv_cols = st.columns(min(len(warehouse), 4))
-        for idx, inv_item in enumerate(warehouse):
-            col_idx = idx % 4
-            with inv_cols[col_idx]:
-                qty = int(inv_item["qty"])
-                status_class = "danger" if qty == 0 else ("warn" if qty < 15 else "ok")
-                border_color = "#ea4335" if qty == 0 else ("#f4b400" if qty < 15 else "#34a853")
-                st.markdown(f"""<div class="card-hover {status_class}" style="min-height:80px;">
-                    <div style="font-size:22px;font-weight:800;color:{border_color};">{qty}</div>
-                    <div style="font-size:12px;font-weight:600;">{inv_item['name' if not is_en else 'name_en']}</div>
-                    <div style="font-size:10px;color:#888;">{inv_item['sku']} · {inv_item['location']} ({inv_item['zone']})</div>
-                </div>""", unsafe_allow_html=True)
-
-    # ═══════ Tab 3: 物流追踪 ═══════
-    with tab3:
-        st.markdown(T("### 📦 物流追踪中心","### 📦 Tracking Center"))
-        st.caption(T("输入运单号查看实时物流轨迹","Enter tracking number to view real-time logistics"))
-
-        # 运单号输入
-        shipped_orders = [o for o in orders if o["status"] == "shipped"]
-        tracking_options = {"": None}
-        for o in shipped_orders:
-            label = f"{o['tracking_no']} — {o.get('customer' if not is_en else 'customer_en', o.get('customer',''))} ({o['order_id']})"
-            tracking_options[label] = o["tracking_no"]
-
-        c1, c2 = st.columns([3, 1])
-        with c1:
-            selected_tracking_label = st.selectbox(
-                T("选择运单号","Select Tracking No."),
-                list(tracking_options.keys()),
-                key="tracking_select"
-            )
-        with c2:
-            track_btn = st.button(T("🔍 查询","🔍 Track"), type="primary", width="stretch")
-
-        tracking_no = tracking_options.get(selected_tracking_label)
-
-        if track_btn and tracking_no:
-            tracking = get_logistics_tracking(tracking_no)
-
-            # 物流进度条
-            st.divider()
-            step_labels = [
-                (T("待揽收","Await Pickup"), "📋"),
-                (T("运输中","In Transit"), "🚛"),
-                (T("派送中","Out for Delivery"), "🏃"),
-                (T("已签收","Delivered"), "✅"),
-            ]
-            current = tracking["current_step"]
-
-            # 自定义进度
-            progress_cols = st.columns(4)
-            for i, (label, icon) in enumerate(step_labels):
-                with progress_cols[i]:
-                    if i < current:
-                        bg = "#34a853"
-                        text_color = "#fff"
-                    elif i == current:
-                        bg = "#FF8C42"
-                        text_color = "#fff"
                     else:
-                        bg = "#e0e0e0"
-                        text_color = "#888"
-                    st.markdown(f"""<div style="background:{bg};color:{text_color};border-radius:6px;padding:8px 4px;text-align:center;font-size:11px;font-weight:600;">
-                        {icon}<br>{label}
-                    </div>""", unsafe_allow_html=True)
+                        st.markdown(
+                            T(
+                                f"{icon} **{item['name']}** — 缺 {item['shortage']} 件 (需 {item['needed']} / 存 {item['available']}) | 库位: {loc_str}",
+                                f"{icon} **{item['name_en']}** — Short {item['shortage']} (need {item['needed']} / avail {item['available']}) | Loc: {loc_str}",
+                            )
+                        )
 
-            # ETA
-            if tracking["eta"]:
-                st.info(T(f"📅 预计到达时间：{tracking['eta']}","📅 ETA: {tracking['eta']}"))
+        # ── 行内展开：物流追踪 ──
+        if o["status"] == "shipped" and oid in st.session_state.logistics_expanded:
+            courier = o.get("courier_en" if is_en else "courier", o.get("courier",""))
+            tn = o.get("tracking_no","")
+            tracking = st.session_state.tracking_cache.get(oid, get_logistics_tracking(tn))
+            with st.container(border=True):
+                st.markdown(
+                    T(
+                        f"🚚 **{courier}** · 运单号: `{tn}`",
+                        f"🚚 **{courier}** · Tracking: `{tn}`",
+                    )
+                )
+                # 物流进度条
+                step_labels = [
+                    (T("待揽收","Await Pickup"), "📋"),
+                    (T("运输中","In Transit"), "🚛"),
+                    (T("派送中","Out for Delivery"), "🏃"),
+                    (T("已签收","Delivered"), "✅"),
+                ]
+                current = tracking["current_step"]
+                pc = st.columns(4)
+                for i, (label, icon) in enumerate(step_labels):
+                    with pc[i]:
+                        if i < current:
+                            bg, tc = "#34a853", "#fff"
+                        elif i == current:
+                            bg, tc = "#FF8C42", "#fff"
+                        else:
+                            bg, tc = "#e0e0e0", "#888"
+                        st.markdown(f"""<div style="background:{bg};color:{tc};border-radius:6px;padding:6px 2px;text-align:center;font-size:10px;font-weight:600;">
+                            {icon}<br>{label}
+                        </div>""", unsafe_allow_html=True)
+                # 轨迹时间线
+                st.markdown("---")
+                for evt in tracking["events"]:
+                    icon_map = {
+                        "待揽收":"📋","运输中":"🚛","派送中":"🏃","已签收":"✅",
+                        "Awaiting Pickup":"📋","In Transit":"🚛","Out for Delivery":"🏃","Delivered":"✅",
+                    }
+                    icon = icon_map.get(evt.get("status_cn",""), "📍")
+                    st.markdown(
+                        f"{icon} **{evt['time']}** — {evt['status_cn' if not is_en else 'status_en']}"
+                    )
+                    st.caption(evt.get("desc_cn" if not is_en else "desc_en",""))
+                if tracking["eta"]:
+                    st.info(T(f"📅 预计到达：{tracking['eta']}",f"📅 ETA: {tracking['eta']}"))
 
-            # 轨迹时间线
-            st.divider()
-            st.markdown(T("### 📋 物流轨迹","### 📋 Tracking Timeline"))
-            for evt in tracking["events"]:
-                icon_map_tl = {"待揽收":"📋","运输中":"🚛","派送中":"🏃","已签收":"✅",
-                              "Awaiting Pickup":"📋","In Transit":"🚛","Out for Delivery":"🏃","Delivered":"✅"}
-                icon_tl = icon_map_tl.get(evt.get("status_cn",""), "📍")
-                with st.container(border=True):
-                    c_time, c_desc = st.columns([1, 4])
-                    with c_time:
-                        st.markdown(f"**{evt['time']}**")
-                    with c_desc:
-                        st.markdown(f"{icon_tl} **{evt['status_cn' if not is_en else 'status_en']}**")
-                        st.caption(evt.get("desc_cn" if not is_en else "desc_en",""))
+        # ── 行内展开：拣货中详情 ──
+        if o["status"] == "picking" and oid in st.session_state.logistics_expanded:
+            addr = o.get("address_en" if is_en else "address", o.get("address",""))
+            with st.container(border=True):
+                st.markdown(
+                    T(
+                        f"📍 **地址：** {addr}",
+                        f"📍 **Address:** {addr}",
+                    )
+                )
+                st.progress(0.65, text=T("拣货中...","Picking..."))
+                st.caption(T(f"创建时间：{o['created_at']}",f"Created: {o['created_at']}"))
 
-        elif track_btn and not tracking_no:
-            st.warning(T("请选择一个运单号","Please select a tracking number"))
+        st.markdown("---")
 
-        # 全部已发货订单概览
-        st.divider()
-        st.markdown(T("### 🚚 在途包裹","### 🚚 In-Transit Packages"))
-        if shipped_orders:
-            ship_cols = st.columns(min(len(shipped_orders), 3))
-            for idx, so in enumerate(shipped_orders):
-                with ship_cols[idx % 3]:
-                    t_info = get_logistics_tracking(so["tracking_no"])
-                    with st.container(border=True):
-                        items_text = "、".join([f"{it['name' if not is_en else 'name_en']}×{it['qty']}" for it in so["items"]])
-                        cust = so.get("customer_en" if is_en else "customer", so.get("customer",""))
-                        st.markdown(f"**{so['order_id']}**")
-                        st.caption(f"👤 {cust}")
-                        st.markdown(f"📦 {items_text}")
-                        st.caption(f"🚚 {so.get('courier_en' if is_en else 'courier', so.get('courier',''))}")
-                        st.info(T(
-                            f"状态：{t_info['current_status_cn']}",
-                            f"Status: {t_info['current_status_en']}"
-                        ))
-                        if t_info["eta"]:
-                            st.caption(T(f"ETA: {t_info['eta']}","ETA: {t_info['eta']}"))
-        else:
-            st.caption(T("暂无在途包裹","No in-transit packages"))
+    # ── 分页控件 ──
+    st.markdown("")  # 间距
+    if total_pages > 1:
+        # 构建显示页码范围
+        show_start = max(1, page - 2)
+        show_end = min(total_pages, page + 2)
+        # 确保始终显示 5 个（或 total_pages 个）
+        if show_end - show_start < 4:
+            if show_start == 1:
+                show_end = min(total_pages, show_start + 4)
+            else:
+                show_start = max(1, show_end - 4)
+        visible_pages = list(range(show_start, show_end + 1))
+
+        pg_cols = st.columns([2, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 2])
+        # 上一页
+        with pg_cols[0]:
+            if st.button(T("← 上一页","← Prev"), disabled=(page <= 1), width="stretch",
+                         key="prev_page"):
+                st.session_state.logistics_page = page - 1
+                st.rerun()
+        # 页码按钮
+        for i, pn in enumerate(visible_pages):
+            col_idx = i + 1
+            if col_idx >= len(pg_cols) - 1:
+                break
+            with pg_cols[col_idx]:
+                is_current = pn == page
+                btn_type = "primary" if is_current else "secondary"
+                if st.button(str(pn), key=f"page_{pn}",
+                             type=btn_type, width="stretch",
+                             disabled=is_current):
+                    st.session_state.logistics_page = pn
+                    st.rerun()
+        # 下一页
+        with pg_cols[-1]:
+            if st.button(T("下一页 →","Next →"), disabled=(page >= total_pages), width="stretch",
+                         key="next_page"):
+                st.session_state.logistics_page = page + 1
+                st.rerun()
+
+        st.caption(
+            T(
+                f"第 {page}/{total_pages} 页 · 共 {len(orders)} 条",
+                f"Page {page}/{total_pages} · {len(orders)} total",
+            )
+        )
+
+    # ── 仓库库存总览 ──
+    st.divider()
+    st.markdown(T("### 🏭 仓库库存总览","### 🏭 Warehouse Overview"))
+    inv_cols = st.columns(min(len(warehouse), 4))
+    for idx, inv_item in enumerate(warehouse):
+        col_idx = idx % 4
+        with inv_cols[col_idx]:
+            qty = int(inv_item["qty"])
+            status_class = "danger" if qty == 0 else ("warn" if qty < 15 else "ok")
+            border_color = "#ea4335" if qty == 0 else ("#f4b400" if qty < 15 else "#34a853")
+            st.markdown(f"""<div class="card-hover {status_class}" style="min-height:80px;">
+                <div style="font-size:22px;font-weight:800;color:{border_color};">{qty}</div>
+                <div style="font-size:12px;font-weight:600;">{inv_item['name' if not is_en else 'name_en']}</div>
+                <div style="font-size:10px;color:#888;">{inv_item['sku']} · {inv_item['location']} ({inv_item['zone']})</div>
+            </div>""", unsafe_allow_html=True)
 
 st.divider()
 st.image(load_image("footer"), width='stretch')
