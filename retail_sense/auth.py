@@ -149,3 +149,43 @@ def current_role() -> str:
 def is_admin() -> bool:
     """检查是否为管理员"""
     return st.session_state.get("role", "") == "admin"
+
+
+# ── 平台API配置 / Platform API Config ──
+PLATFORM_CONFIG_PATH = os.path.join(AUTH_DIR, "platform_config.json")
+
+
+def load_platform_config() -> dict:
+    """加载平台配置（售卖平台 + 物流API）"""
+    _ensure_dir()
+    if os.path.exists(PLATFORM_CONFIG_PATH):
+        with open(PLATFORM_CONFIG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {
+        "selling_platforms": {
+            "shopify": {"store_url": "", "api_key": "", "webhook_secret": ""},
+            "etsy": {"store_url": "", "api_key": ""},
+            "custom_store": {"webhook_url": "", "webhook_secret": ""},
+        },
+        "logistics_platforms": {"courier_company": "", "api_key": ""},
+    }
+
+
+def save_platform_config(config: dict):
+    """保存平台配置"""
+    _ensure_dir()
+    with open(PLATFORM_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
+
+
+def require_admin() -> bool:
+    """
+    管理员权限检查：非管理员时显示友好提示并返回 False。
+    调用方应根据返回值决定是否继续执行管理员专属操作。
+
+    返回 True 表示是管理员，可以继续；False 表示被拦截。
+    """
+    if not is_admin():
+        st.warning("🔒 此功能仅限管理员使用 / This feature is admin only")
+        return False
+    return True

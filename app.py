@@ -17,7 +17,7 @@ from retail_sense.agent import VirtualAgent
 from retail_sense.agents import SalesPipeline
 from retail_sense.cases import get_cases
 from retail_sense.product_images import get_img, get_all_product_keys, get_product_display_name
-from retail_sense.auth import init_session, is_logged_in, do_login, do_logout, current_user, current_role, register_user
+from retail_sense.auth import init_session, is_logged_in, do_login, do_logout, current_user, current_role, is_admin, require_admin, register_user, load_platform_config, save_platform_config
 from retail_sense.logistics import (
     get_mock_orders, get_warehouse_inventory, allocate_order,
     get_logistics_tracking, generate_waybill_no, simulate_delivery_tracking,
@@ -294,60 +294,116 @@ with st.sidebar:
             st.session_state.font_size = font_size; st.rerun()
 
         st.divider()
-        st.markdown(T("**数据源**","**Data Source**"))
-        use_co = st.checkbox(T("接入公司数据","Connect Company Data"), value=st.session_state.use_company)
-        if use_co != st.session_state.use_company:
-            st.session_state.use_company = use_co; st.rerun()
+        # 数据源 — 仅管理员 / Data Source — admin only
+        if is_admin():
+            st.markdown(T("**数据源**","**Data Source**"))
+            use_co = st.checkbox(T("接入公司数据","Connect Company Data"), value=st.session_state.use_company)
+            if use_co != st.session_state.use_company:
+                st.session_state.use_company = use_co; st.rerun()
 
-        if use_co and available_companies:
-            company_names = available_companies
-            current_idx = company_names.index(current_company_file) if current_company_file in company_names else 0
-            selected = st.selectbox(T("选择公司","Select Company"), company_names, index=current_idx)
-            if selected != st.session_state.company_file:
-                st.session_state.company_file = selected; st.rerun()
+            if use_co and available_companies:
+                company_names = available_companies
+                current_idx = company_names.index(current_company_file) if current_company_file in company_names else 0
+                selected = st.selectbox(T("选择公司","Select Company"), company_names, index=current_idx)
+                if selected != st.session_state.company_file:
+                    st.session_state.company_file = selected; st.rerun()
 
         st.divider()
-        with st.expander(T("🖼️ 图片管理", "🖼️ Image Manager"), expanded=False):
-            st.caption(T("上传本地产品图片以替换默认图（支持 jpg/png/webp）",
-                         "Upload local product images to replace defaults (jpg/png/webp)"))
-            image_dir = os.path.join(os.path.dirname(__file__), "images", "products")
-            os.makedirs(image_dir, exist_ok=True)
+        # 图片管理 — 仅管理员 / Image Manager — admin only
+        if is_admin():
+            with st.expander(T("🖼️ 图片管理", "🖼️ Image Manager"), expanded=False):
+                st.caption(T("上传本地产品图片以替换默认图（支持 jpg/png/webp）",
+                             "Upload local product images to replace defaults (jpg/png/webp)"))
+                image_dir = os.path.join(os.path.dirname(__file__), "images", "products")
+                os.makedirs(image_dir, exist_ok=True)
 
-            for key in get_all_product_keys():
-                display_name = get_product_display_name(key)
-                filepath = os.path.join(image_dir, f"{key}.jpg")
+                for key in get_all_product_keys():
+                    display_name = get_product_display_name(key)
+                    filepath = os.path.join(image_dir, f"{key}.jpg")
 
-                c_img, c_upload = st.columns([0.8, 3])
-                with c_img:
-                    b64 = get_img(key)
-                    if b64:
-                        st.markdown(
-                            f'<img src="data:image/jpeg;base64,{b64}" '
-                            f'style="width:48px;height:48px;border-radius:4px;object-fit:cover;">',
-                            unsafe_allow_html=True,
+                    c_img, c_upload = st.columns([0.8, 3])
+                    with c_img:
+                        b64 = get_img(key)
+                        if b64:
+                            st.markdown(
+                                f'<img src="data:image/jpeg;base64,{b64}" '
+                                f'style="width:48px;height:48px;border-radius:4px;object-fit:cover;">',
+                                unsafe_allow_html=True,
+                            )
+                    with c_upload:
+                        has_custom = os.path.isfile(filepath)
+                        status_badge = "🟢 " + T("已自定义", "Custom") if has_custom else "⚪ " + T("默认图", "Default")
+                        st.caption(f"**{display_name}** — {status_badge}")
+                        uploaded = st.file_uploader(
+                            T(f"替换 {display_name}", f"Replace {display_name}"),
+                            type=["jpg", "jpeg", "png", "webp"],
+                            key=f"img_upload_{key}",
+                            label_visibility="collapsed",
                         )
-                with c_upload:
-                    has_custom = os.path.isfile(filepath)
-                    status_badge = "🟢 " + T("已自定义", "Custom") if has_custom else "⚪ " + T("默认图", "Default")
-                    st.caption(f"**{display_name}** — {status_badge}")
-                    uploaded = st.file_uploader(
-                        T(f"替换 {display_name}", f"Replace {display_name}"),
-                        type=["jpg", "jpeg", "png", "webp"],
-                        key=f"img_upload_{key}",
-                        label_visibility="collapsed",
-                    )
-                    if uploaded is not None:
-                        with open(filepath, "wb") as f:
-                            f.write(uploaded.getbuffer())
-                        st.success(T(f"✅ {display_name} 已更新！", f"✅ {display_name} updated!"))
-                        st.rerun()
-
-                    # Reset button to remove custom image
-                    if has_custom:
-                        if st.button(T("恢复默认", "Reset"), key=f"img_reset_{key}"):
-                            if os.path.isfile(filepath):
-                                os.remove(filepath)
+                        if uploaded is not None:
+                            with open(filepath, "wb") as f:
+                                f.write(uploaded.getbuffer())
+                            st.success(T(f"✅ {display_name} 已更新！", f"✅ {display_name} updated!"))
                             st.rerun()
+
+                        # Reset button to remove custom image
+                        if has_custom:
+                            if st.button(T("恢复默认", "Reset"), key=f"img_reset_{key}"):
+                                if os.path.isfile(filepath):
+                                    os.remove(filepath)
+                                st.rerun()
+
+        # 平台管理 — 仅管理员 / Platform Management — admin only
+        if is_admin():
+            with st.expander(T("🔌 平台管理", "🔌 Platform Management"), expanded=False):
+                pconfig = load_platform_config()
+
+                st.markdown(T("### 🛍️ 售卖平台 / Selling Platforms", "### 🛍️ Selling Platforms"))
+
+                # Shopify
+                st.markdown(T("**Shopify**", "**Shopify**"))
+                sp = pconfig.setdefault("selling_platforms", {}).setdefault("shopify", {})
+                sp_url = st.text_input(T("Store URL", "Store URL"), value=sp.get("store_url",""), key="sp_shopify_url", placeholder="https://xxx.myshopify.com")
+                sp_key = st.text_input(T("API Key", "API Key"), value=sp.get("api_key",""), key="sp_shopify_key", type="password")
+                sp_secret = st.text_input(T("Webhook Secret", "Webhook Secret"), value=sp.get("webhook_secret",""), key="sp_shopify_secret", type="password")
+
+                st.divider()
+
+                # Etsy
+                st.markdown(T("**Etsy**", "**Etsy**"))
+                ep = pconfig.setdefault("selling_platforms", {}).setdefault("etsy", {})
+                ep_url = st.text_input(T("Store URL", "Store URL"), value=ep.get("store_url",""), key="sp_etsy_url", placeholder="https://www.etsy.com/shop/xxx")
+                ep_key = st.text_input(T("API Key", "API Key"), value=ep.get("api_key",""), key="sp_etsy_key", type="password")
+
+                st.divider()
+
+                # 独立站
+                st.markdown(T("**独立站 / Custom Store**", "**Custom Store**"))
+                cp = pconfig.setdefault("selling_platforms", {}).setdefault("custom_store", {})
+                cp_url = st.text_input(T("Webhook URL", "Webhook URL"), value=cp.get("webhook_url",""), key="sp_custom_url", placeholder="https://your-store.com/api/webhook")
+                cp_secret = st.text_input(T("Webhook Secret", "Webhook Secret"), value=cp.get("webhook_secret",""), key="sp_custom_secret", type="password")
+
+                st.divider()
+                st.markdown(T("### 🚚 物流平台 / Logistics Platforms", "### 🚚 Logistics Platforms"))
+
+                lp = pconfig.setdefault("logistics_platforms", {})
+                lp_company = st.text_input(T("快递公司", "Courier Company"), value=lp.get("courier_company",""), key="lp_company", placeholder=T("如: 顺丰/圆通/DHL","e.g. SF Express/DHL"))
+                lp_key = st.text_input(T("API Key", "API Key"), value=lp.get("api_key",""), key="lp_key", type="password")
+
+                # 保存按钮
+                if st.button(T("💾 保存平台配置", "💾 Save Platform Config"), type="primary", key="save_platform_config"):
+                    pconfig["selling_platforms"]["shopify"]["store_url"] = sp_url
+                    pconfig["selling_platforms"]["shopify"]["api_key"] = sp_key
+                    pconfig["selling_platforms"]["shopify"]["webhook_secret"] = sp_secret
+                    pconfig["selling_platforms"]["etsy"]["store_url"] = ep_url
+                    pconfig["selling_platforms"]["etsy"]["api_key"] = ep_key
+                    pconfig["selling_platforms"]["custom_store"]["webhook_url"] = cp_url
+                    pconfig["selling_platforms"]["custom_store"]["webhook_secret"] = cp_secret
+                    pconfig["logistics_platforms"]["courier_company"] = lp_company
+                    pconfig["logistics_platforms"]["api_key"] = lp_key
+                    save_platform_config(pconfig)
+                    st.success(T("✅ 平台配置已保存！", "✅ Platform config saved!"))
+                    st.rerun()
     st.divider()
     with st.expander(T("关于","About")):
         st.markdown(T("**RetailSense** 由一位前瑞幸咖啡店长构建。","**RetailSense** built by a former Luckin Coffee store manager."))
@@ -478,16 +534,19 @@ elif page == "选品评分":
         st.markdown(T("**设计理念**：3年瑞幸200+SKU管理经验 → 真正吃掉利润的是滞销。\n| 维度 | 权重 |\n|------|:---:|\n| 复购 | 30% |\n| 竞争 | 25% |\n| 趋势 | 25% |\n| 毛利 | 20% |",
                       "**Design**: 3yr Luckin, 200+ SKUs → unsold inventory destroys profit.\n| Dim | Weight |\n|------|:---:|\n| Repur | 30% |\n| Comp | 25% |\n| Trend | 25% |\n| Margin | 20% |"))
 
-    PRODUCTS = [
-        {"name":"刻字狗牌","name_en":"Engraved Dog Tag","cost":2.80,"price":12.99,"competitors":35,"search_growth":22,"trend_up":True,"annual_purchases":2,"is_consumable":False,"img":"dog-tag"},
-        {"name":"发光项圈","name_en":"LED Collar","cost":5.50,"price":24.99,"competitors":28,"search_growth":15,"trend_up":True,"annual_purchases":2,"is_consumable":False,"img":"led-collar"},
-        {"name":"珐琅名牌","name_en":"Enamel Nameplate","cost":3.20,"price":16.99,"competitors":18,"search_growth":35,"trend_up":True,"annual_purchases":2,"is_consumable":False,"img":"enamel-plate"},
-        {"name":"牵引绳套装","name_en":"Leash Set","cost":4.50,"price":22.99,"competitors":42,"search_growth":8,"trend_up":True,"annual_purchases":2,"is_consumable":False,"img":"leash-set"},
-        {"name":"宠物领结","name_en":"Pet Bow Tie","cost":1.50,"price":9.99,"competitors":55,"search_growth":-5,"trend_up":False,"annual_purchases":3,"is_consumable":True,"img":"bow-tie"},
-        {"name":"亚克力牌","name_en":"Acrylic Tag","cost":1.20,"price":8.99,"competitors":22,"search_growth":18,"trend_up":True,"annual_purchases":2,"is_consumable":False,"img":"acrylic-tag"},
-        {"name":"宠物手链","name_en":"Pet Bracelet","cost":2.00,"price":14.99,"competitors":15,"search_growth":42,"trend_up":True,"annual_purchases":1,"is_consumable":False,"img":"bracelet"},
-        {"name":"换牙零食","name_en":"Teething Treats","cost":3.00,"price":11.99,"competitors":30,"search_growth":28,"trend_up":True,"annual_purchases":8,"is_consumable":True,"img":"treats"},
-    ]
+    # ── 产品数据（admin 可编辑 / editable by admin）──
+    if "products" not in st.session_state:
+        st.session_state.products = [
+            {"name":"刻字狗牌","name_en":"Engraved Dog Tag","cost":2.80,"price":12.99,"competitors":35,"search_growth":22,"trend_up":True,"annual_purchases":2,"is_consumable":False,"img":"dog-tag"},
+            {"name":"发光项圈","name_en":"LED Collar","cost":5.50,"price":24.99,"competitors":28,"search_growth":15,"trend_up":True,"annual_purchases":2,"is_consumable":False,"img":"led-collar"},
+            {"name":"珐琅名牌","name_en":"Enamel Nameplate","cost":3.20,"price":16.99,"competitors":18,"search_growth":35,"trend_up":True,"annual_purchases":2,"is_consumable":False,"img":"enamel-plate"},
+            {"name":"牵引绳套装","name_en":"Leash Set","cost":4.50,"price":22.99,"competitors":42,"search_growth":8,"trend_up":True,"annual_purchases":2,"is_consumable":False,"img":"leash-set"},
+            {"name":"宠物领结","name_en":"Pet Bow Tie","cost":1.50,"price":9.99,"competitors":55,"search_growth":-5,"trend_up":False,"annual_purchases":3,"is_consumable":True,"img":"bow-tie"},
+            {"name":"亚克力牌","name_en":"Acrylic Tag","cost":1.20,"price":8.99,"competitors":22,"search_growth":18,"trend_up":True,"annual_purchases":2,"is_consumable":False,"img":"acrylic-tag"},
+            {"name":"宠物手链","name_en":"Pet Bracelet","cost":2.00,"price":14.99,"competitors":15,"search_growth":42,"trend_up":True,"annual_purchases":1,"is_consumable":False,"img":"bracelet"},
+            {"name":"换牙零食","name_en":"Teething Treats","cost":3.00,"price":11.99,"competitors":30,"search_growth":28,"trend_up":True,"annual_purchases":8,"is_consumable":True,"img":"treats"},
+        ]
+    PRODUCTS = st.session_state.products
 
     scorer = ProductScorer()
     for i, p in enumerate(PRODUCTS):
@@ -518,6 +577,35 @@ elif page == "选品评分":
                 ie = IntentEngine()
                 best = ie.best_angle(p)
                 st.caption(f"**{best['angle']}**: {best['pitch']}")
+
+        # ── 管理员产品编辑 / Admin Product Edit ──
+        if is_admin():
+            with st.expander(T("✏️ 编辑产品信息", "✏️ Edit Product"), expanded=False, key=f"edit_prod_{i}"):
+                e_name = st.text_input(T("产品名称", "Product Name"), value=p.get("name",""), key=f"edit_name_{i}")
+                e_name_en = st.text_input(T("英文名称", "English Name"), value=p.get("name_en",""), key=f"edit_name_en_{i}")
+                ec1, ec2 = st.columns(2)
+                with ec1:
+                    e_cost = st.number_input(T("成本 ¥", "Cost ¥"), value=float(p.get("cost",0)), step=0.10, format="%.2f", key=f"edit_cost_{i}")
+                with ec2:
+                    e_price = st.number_input(T("售价 ¥", "Price ¥"), value=float(p.get("price",0)), step=0.10, format="%.2f", key=f"edit_price_{i}")
+                ec3, ec4 = st.columns(2)
+                with ec3:
+                    e_comp = st.number_input(T("竞品数", "Competitors"), value=int(p.get("competitors",0)), step=1, key=f"edit_comp_{i}")
+                with ec4:
+                    e_growth = st.number_input(T("搜索增长 %", "Search Growth %"), value=int(p.get("search_growth",0)), step=1, key=f"edit_growth_{i}")
+                e_annual = st.number_input(T("年均复购次数", "Annual Purchases"), value=int(p.get("annual_purchases",1)), step=1, min_value=1, key=f"edit_annual_{i}")
+                e_consumable = st.checkbox(T("消耗品", "Consumable"), value=p.get("is_consumable",False), key=f"edit_consumable_{i}")
+                if st.button(T("💾 保存修改", "💾 Save Changes"), type="primary", key=f"save_prod_{i}"):
+                    st.session_state.products[i]["name"] = e_name
+                    st.session_state.products[i]["name_en"] = e_name_en
+                    st.session_state.products[i]["cost"] = e_cost
+                    st.session_state.products[i]["price"] = e_price
+                    st.session_state.products[i]["competitors"] = e_comp
+                    st.session_state.products[i]["search_growth"] = e_growth
+                    st.session_state.products[i]["annual_purchases"] = e_annual
+                    st.session_state.products[i]["is_consumable"] = e_consumable
+                    st.success(T("✅ 产品信息已更新！", "✅ Product updated!"))
+                    st.rerun()
 
     if st.button(T("批量评分排名","Batch Ranking"), type="primary"):
         results = scorer.rank(PRODUCTS)
