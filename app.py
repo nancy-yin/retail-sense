@@ -21,13 +21,13 @@ from retail_sense.product_images import get_img
 st.set_page_config(page_title="RetailSense", page_icon="🐾", layout="wide")
 
 # ── 宠物温馨风 CSS（缩小字体+悬停+渐变）──
-st.markdown("""
+st.markdown(f"""
 <style>
 /* 全局字体 */
-html, body, [class*="css"] { font-size: 13px !important; }
-h1 { font-size: 22px !important; }
-h2 { font-size: 17px !important; }
-h3 { font-size: 15px !important; }
+html, body, [class*="css"] {{ font-size: {st.session_state.font_size} !important; }}
+h1 {{ font-size: {max(18, int(st.session_state.font_size.replace('px','')) + 9)}px !important; }}
+h2 {{ font-size: {max(14, int(st.session_state.font_size.replace('px','')) + 4)}px !important; }}
+h3 {{ font-size: {max(13, int(st.session_state.font_size.replace('px','')) + 2)}px !important; }}
 
 /* 渐变按钮 */
 [data-testid="stButton"] button {
@@ -85,7 +85,8 @@ for key in DEFAULT_IMAGES:
 if "lang" not in st.session_state: st.session_state.lang = "zh"
 if "nav" not in st.session_state: st.session_state.nav = "工作台"
 if "use_company" not in st.session_state: st.session_state.use_company = True
-if "company_data" not in st.session_state: st.session_state.company_data = load_company_data()
+if "company_file" not in st.session_state: st.session_state.company_file = "萌爪宠物用品.json"
+if "font_size" not in st.session_state: st.session_state.font_size = "13px"
 if "agent_msg" not in st.session_state: st.session_state.agent_msg = []
 if "first_visit" not in st.session_state: st.session_state.first_visit = True
 
@@ -114,10 +115,26 @@ with st.sidebar:
         if (lang == "English" and st.session_state.lang != "en") or (lang == "中文" and st.session_state.lang != "zh"):
             st.session_state.lang = "en" if lang == "English" else "zh"; st.rerun()
         st.divider()
+
+        # 字体大小
+        font_size = st.select_slider(T("字体大小","Font Size"),
+                                     options=["11px","12px","13px","14px","15px","16px"],
+                                     value=st.session_state.font_size)
+        if font_size != st.session_state.font_size:
+            st.session_state.font_size = font_size; st.rerun()
+
+        st.divider()
         st.markdown(T("**数据源**","**Data Source**"))
-        use_co = st.checkbox(T("接入示例宠物用品公司","Connect Demo Pet Supplies Co."), value=st.session_state.use_company)
+        use_co = st.checkbox(T("接入公司数据","Connect Company Data"), value=st.session_state.use_company)
         if use_co != st.session_state.use_company:
             st.session_state.use_company = use_co; st.rerun()
+
+        if use_co and available_companies:
+            company_names = available_companies
+            current_idx = company_names.index(current_company_file) if current_company_file in company_names else 0
+            selected = st.selectbox(T("选择公司","Select Company"), company_names, index=current_idx)
+            if selected != st.session_state.company_file:
+                st.session_state.company_file = selected; st.rerun()
     st.divider()
     with st.expander(T("关于","About")):
         st.markdown(T("**RetailSense** 由一位前瑞幸咖啡店长构建。","**RetailSense** built by a former Luckin Coffee store manager."))
@@ -126,7 +143,10 @@ with st.sidebar:
     st.caption(f"{VERSION} · MIT")
 
 page = st.session_state.nav
-company = st.session_state.company_data if st.session_state.use_company else None
+# 加载当前选择的公司
+available_companies = list_companies()
+current_company_file = st.session_state.company_file if st.session_state.company_file in available_companies else (available_companies[0] if available_companies else "")
+company = load_company_data(current_company_file) if st.session_state.use_company and current_company_file else None
 inv = get_inventory(company, st.session_state.use_company)
 txns = get_transactions(company, st.session_state.use_company)
 agent = VirtualAgent()
