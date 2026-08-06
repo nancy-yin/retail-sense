@@ -1,3 +1,4 @@
 # RetailSense 依赖
 streamlit>=1.60
+pandas>=2.0
 # Python 3.11+

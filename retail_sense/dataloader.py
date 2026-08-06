@@ -8,7 +8,10 @@ import json
 import os
 from datetime import datetime, timedelta
 
-COMPANIES_DIR = os.path.expanduser("~/Desktop/宠物饰品公司案例")
+# 公司数据目录：优先使用本地 data/ 目录，兼容 Desktop 旧路径
+_LEGACY_DIR = os.path.expanduser("~/Desktop/宠物饰品公司案例")
+_PROJECT_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+COMPANIES_DIR = _PROJECT_DIR if os.path.isdir(_PROJECT_DIR) else _LEGACY_DIR
 DEFAULT_COMPANY = "萌爪宠物用品.json"
 
 # 发现所有可用公司
