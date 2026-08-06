@@ -17,6 +17,7 @@ from retail_sense.agent import VirtualAgent
 from retail_sense.agents import SalesPipeline
 from retail_sense.cases import get_cases
 from retail_sense.product_images import get_img, get_all_product_keys, get_product_display_name
+from retail_sense.auth import init_session, is_logged_in, do_login, do_logout, current_user, current_role, register_user
 from retail_sense.logistics import (
     get_mock_orders, get_warehouse_inventory, allocate_order,
     get_logistics_tracking, generate_waybill_no, simulate_delivery_tracking,
@@ -68,6 +69,145 @@ h3 {{ font-size: {fs+2}px !important; }}
 </style>
 """, unsafe_allow_html=True)
 
+# ── 登录系统 ──
+init_session()
+
+if not is_logged_in():
+    # 登录/注册页面 CSS
+    st.markdown(f"""
+    <style>
+    .login-container {{
+        max-width: 440px;
+        margin: 0 auto;
+        padding: 40px 24px;
+        text-align: center;
+    }}
+    .login-header {{
+        font-size: 30px;
+        font-weight: 700;
+        color: #FF8C42;
+        margin-bottom: 2px;
+    }}
+    .login-sub {{
+        font-size: 13px;
+        color: #888;
+        margin-bottom: 28px;
+    }}
+    .login-mascot {{
+        font-size: 56px;
+        margin-bottom: 8px;
+    }}
+    .login-footer-text {{
+        font-size: 11px;
+        color: #aaa;
+        margin-top: 28px;
+        line-height: 1.6;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    # 在登录页中定义 T / is_en（此时 lang 已初始化）
+    _is_en = st.session_state.lang == "en"
+    _T = lambda cn, en: en if _is_en else cn
+
+    col1, col2, col3 = st.columns([1, 2.2, 1])
+    with col2:
+        st.markdown('<div class="login-container">', unsafe_allow_html=True)
+
+        # 萌宠图标
+        st.markdown('<div class="login-mascot">🐾</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="login-header">RetailSense</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="login-sub">{_T("AI 零售选品与库存决策系统", "AI Retail Selection & Inventory")}</div>',
+            unsafe_allow_html=True,
+        )
+
+        # 语言切换
+        lang_choice = st.selectbox(
+            _T("界面语言", "Language"),
+            ["中文", "English"],
+            index=0 if st.session_state.lang == "zh" else 1,
+            key="login_lang_sel",
+        )
+        new_lang = "en" if lang_choice == "English" else "zh"
+        if new_lang != st.session_state.lang:
+            st.session_state.lang = new_lang
+            st.rerun()
+
+        st.markdown("---")
+
+        # ── 登录 / 注册 Tab ──
+        tab_login, tab_register = st.tabs([_T("🔑 登录", "🔑 Login"), _T("📝 注册", "📝 Register")])
+
+        with tab_login:
+            login_user = st.text_input(
+                _T("用户名", "Username"),
+                key="login_user_field",
+                placeholder="admin",
+                label_visibility="visible",
+            )
+            login_pass = st.text_input(
+                _T("密码", "Password"),
+                type="password",
+                key="login_pass_field",
+                placeholder="••••••••",
+                label_visibility="visible",
+            )
+            col_btn1, col_btn2 = st.columns([1.2, 1])
+            with col_btn1:
+                if st.button(_T("🐾 登录", "🐾 Login"), type="primary", use_container_width=True, key="btn_login_main"):
+                    if not login_user or not login_pass:
+                        st.warning(_T("请输入用户名和密码", "Please enter username and password"))
+                    else:
+                        ok, msg = do_login(login_user, login_pass)
+                        if ok:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+
+        with tab_register:
+            reg_user = st.text_input(
+                _T("设置用户名", "Choose Username"),
+                key="reg_user_field",
+                placeholder=_T("至少2个字符", "Min 2 characters"),
+            )
+            reg_pass = st.text_input(
+                _T("设置密码", "Choose Password"),
+                type="password",
+                key="reg_pass_field",
+                placeholder=_T("至少6位", "Min 6 characters"),
+            )
+            reg_pass2 = st.text_input(
+                _T("确认密码", "Confirm Password"),
+                type="password",
+                key="reg_pass2_field",
+                placeholder=_T("再次输入密码", "Retype password"),
+            )
+            col_btn1, col_btn2 = st.columns([1.2, 1])
+            with col_btn1:
+                if st.button(_T("📝 注册", "📝 Register"), type="primary", use_container_width=True, key="btn_register_main"):
+                    if not reg_user or not reg_pass:
+                        st.warning(_T("请填写所有字段", "Please fill all fields"))
+                    elif reg_pass != reg_pass2:
+                        st.error(_T("两次密码不一致", "Passwords do not match"))
+                    else:
+                        ok, msg = register_user(reg_user, reg_pass)
+                        if ok:
+                            st.success(msg)
+                        else:
+                            st.error(msg)
+
+        st.markdown(
+            f'<div class="login-footer-text">'
+            f'{_T("RetailSense v2.3 · 宠物温馨风 · 管理员可通过系统预设账号登录", "RetailSense v2.3 · Pet-friendly · Admin login via system preset")}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.stop()
+
 IMAGE_DIR = os.path.join(os.path.dirname(__file__), "images")
 DEFAULT_IMAGES = {"banner":os.path.join(IMAGE_DIR,"banner.jpg"),"sidebar":os.path.join(IMAGE_DIR,"sidebar.jpg"),"footer":os.path.join(IMAGE_DIR,"footer.jpg")}
 def load_image(key):
@@ -106,6 +246,34 @@ txns = get_transactions(company, st.session_state.use_company)
 
 # ── 侧边栏 ──
 with st.sidebar:
+    # 🐾 当前用户信息
+    user = current_user()
+    role = current_role()
+    role_badge = "🛡️" if role == "admin" else "👤"
+    role_label = "管理员" if role == "admin" else ("普通用户" if role == "user" else "")
+    role_label_en = "Admin" if role == "admin" else ("User" if role == "user" else "")
+
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;
+         background:linear-gradient(135deg,#FFF8F0,#FFE8D6);border-radius:8px;
+         margin-bottom:6px;border:1px solid #f0dcc8;">
+        <span style="font-size:22px;">🐾</span>
+        <div style="flex:1;min-width:0;">
+            <div style="font-weight:700;font-size:13px;color:#5a4a3a;
+                 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{user}</div>
+            <div style="font-size:10px;color:#FF8C42;font-weight:500;">
+                {role_badge} {role_label_en if is_en else role_label}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 退出按钮
+    if st.button(T("🚪 退出登录", "🚪 Logout"), use_container_width=True, key="sidebar_logout"):
+        do_logout()
+        st.rerun()
+
+    st.divider()
     st.image(load_image("sidebar"), width='stretch')
     for name in ["工作台","选品评分","定价模型","库存监控","案例库","销售自动化","物流配发"]:
         kind = "primary" if st.session_state.nav == name else "secondary"
