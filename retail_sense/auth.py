@@ -189,3 +189,16 @@ def require_admin() -> bool:
         st.warning("🔒 此功能仅限管理员使用 / This feature is admin only")
         return False
     return True
+
+
+def require_user() -> bool:
+    """
+    普通用户权限检查：管理员时显示友好提示并返回 False。
+    调用方应根据返回值决定是否继续执行员工专属操作。
+
+    返回 True 表示是普通用户，可以继续；False 表示被拦截。
+    """
+    if is_admin():
+        st.warning("🔒 请用员工账号操作 / Please use a staff account")
+        return False
+    return True

@@ -17,7 +17,7 @@ from retail_sense.agent import VirtualAgent
 from retail_sense.agents import SalesPipeline
 from retail_sense.cases import get_cases
 from retail_sense.product_images import get_img, get_all_product_keys, get_product_display_name
-from retail_sense.auth import init_session, is_logged_in, do_login, do_logout, current_user, current_role, is_admin, require_admin, register_user, load_platform_config, save_platform_config
+from retail_sense.auth import init_session, is_logged_in, do_login, do_logout, current_user, current_role, is_admin, require_admin, require_user, register_user, load_platform_config, save_platform_config
 from retail_sense.logistics import (
     get_mock_orders, get_warehouse_inventory, allocate_order,
     get_logistics_tracking, generate_waybill_no, simulate_delivery_tracking,
@@ -275,7 +275,7 @@ with st.sidebar:
 
     st.divider()
     st.image(load_image("sidebar"), width='stretch')
-    for name in ["工作台","选品评分","定价模型","库存监控","案例库","销售自动化","物流配发"]:
+    for name in ["工作台","选品评分","定价模型","库存监控","案例库","销售自动化","物流配发","商品上架"]:
         kind = "primary" if st.session_state.nav == name else "secondary"
         if st.button(name, width='stretch', type=kind):
             st.session_state.nav = name; st.rerun()
@@ -827,6 +827,9 @@ elif page == "销售自动化":
 
 # ══ 物流配发 ══
 elif page == "物流配发":
+    if not require_user():
+        st.stop()
+
     st.title(T("物流配发","Logistics & Fulfillment"))
     st.caption(T("订单看板 · 智能配货 · 虚拟快递追踪","Order Board · Smart Allocation · Virtual Delivery Tracking"))
 
@@ -1389,6 +1392,421 @@ requests.post(WEBHOOK_URL, data=body, headers={{
 }})
 ```
 """))
+
+# ══ 商品上架 ══
+elif page == "商品上架":
+    if not require_user():
+        st.stop()
+
+    st.title(T("商品上架","Product Listing"))
+    st.caption(T("选品 → 一键上架到 Shopify / Etsy / 独立站","Select → List to Shopify / Etsy / Custom Store"))
+
+    # ── 初始化 listing session_state ──
+    if "listing_records" not in st.session_state:
+        st.session_state.listing_records = []
+    if "listing_product_status" not in st.session_state:
+        st.session_state.listing_product_status = {}
+
+    # ── 上架平台配置 ──
+    PLATFORMS = {
+        "shopify": {
+            "name": "Shopify",
+            "icon": "🛍️",
+            "desc_cn": "全球独立电商平台，适合品牌化运营",
+            "desc_en": "Global e-commerce platform for brand building",
+            "domain": "myshopify.com",
+            "listing_format": {
+                "title_prefix_cn": "Premium",
+                "title_prefix_en": "Premium",
+                "title_suffix_cn": " — 官方旗舰店正品保障",
+                "title_suffix_en": " — Official Store Guaranteed",
+            },
+        },
+        "etsy": {
+            "name": "Etsy",
+            "icon": "🧶",
+            "desc_cn": "手工艺/创意品平台，适合个性化宠物用品",
+            "desc_en": "Handmade & creative marketplace for unique pet items",
+            "domain": "etsy.com",
+            "listing_format": {
+                "title_prefix_cn": "手工定制",
+                "title_prefix_en": "Handmade Custom",
+                "title_suffix_cn": " — 匠心手作·宠物专属",
+                "title_suffix_en": " — Artisan Crafted for Your Pet",
+            },
+        },
+        "custom_store": {
+            "name": T("独立站","Custom Store"),
+            "icon": "🏠",
+            "desc_cn": "自建品牌官网，完全掌控品牌与数据",
+            "desc_en": "Self-hosted brand site, full control over brand & data",
+            "domain": "yourstore.com",
+            "listing_format": {
+                "title_prefix_cn": "",
+                "title_prefix_en": "",
+                "title_suffix_cn": " — 品牌直营",
+                "title_suffix_en": " — Direct from Brand",
+            },
+        },
+    }
+
+    # ── AI Listing 生成器 ──
+    def generate_listing(product, platform_key, lang_z="zh"):
+        pf = PLATFORMS[platform_key]
+        fmt = pf["listing_format"]
+        pn = product.get("name_en" if lang_z == "en" else "name", product.get("name", ""))
+        pn_en = product.get("name_en", product.get("name", ""))
+        cost = product.get("cost", 0)
+        price = product.get("price", 0)
+        img_key = product.get("img", "")
+
+        prefix = fmt.get("title_prefix_en" if lang_z == "en" else "title_prefix_cn", "")
+        suffix = fmt.get("title_suffix_en" if lang_z == "en" else "title_suffix_cn", "")
+        title = f"{prefix} {pn} {suffix}".strip() if prefix else f"{pn}{suffix}"
+
+        desc_templates = {
+            "shopify": {
+                "zh": (
+                    f"✨ **{pn}** — 为您的爱宠打造的高品质选择。\n\n"
+                    f"📌 **产品亮点：**\n"
+                    f"• 精选材质，安全无毒，宠物放心使用\n"
+                    f"• 精致工艺，细节彰显品质\n"
+                    f"• 多尺寸可选，适配不同体型宠物\n"
+                    f"• 耐用设计，经得起日常使用考验\n\n"
+                    f"📦 **规格参数：**\n"
+                    f"• 品牌：萌爪宠物用品\n"
+                    f"• 材质：高品质环保材料\n"
+                    f"• 适用对象：猫/狗通用\n\n"
+                    f"🚚 **配送信息：** 下单后24小时内发货，全国包邮。\n"
+                    f"💯 **售后保障：** 30天无忧退换，品质问题全额退款。"
+                ),
+                "en": (
+                    f"✨ **{pn_en}** — Premium quality for your beloved pet.\n\n"
+                    f"📌 **Key Features:**\n"
+                    f"• Premium materials, pet-safe & non-toxic\n"
+                    f"• Exquisite craftsmanship, quality in every detail\n"
+                    f"• Multiple sizes for different breeds\n"
+                    f"• Durable design, built for daily use\n\n"
+                    f"📦 **Specifications:**\n"
+                    f"• Brand: Pawsitive Pet Supplies\n"
+                    f"• Material: High-quality eco-friendly materials\n"
+                    f"• Suitable for: Cats & Dogs\n\n"
+                    f"🚚 **Shipping:** Ships within 24 hours. Free shipping nationwide.\n"
+                    f"💯 **Guarantee:** 30-day hassle-free returns. Full refund on quality issues."
+                ),
+            },
+            "etsy": {
+                "zh": (
+                    f"🎨 **{pn}** — 每一件都是独一无二的心意之作。\n\n"
+                    f"🌟 **为什么选择我们：**\n"
+                    f"• 🖐️ 手工打造，每一件都倾注匠心\n"
+                    f"• 🎁 支持个性化刻字/定制，独一无二\n"
+                    f"• 🌿 环保材料，关爱地球也关爱宠物\n"
+                    f"• 📸 实物拍摄，所见即所得\n\n"
+                    f"📏 **尺寸说明：** 请参考详情页尺寸图表，选择最适合的规格。\n"
+                    f"💌 **定制流程：** 下单 → 留言定制要求 → 3-5个工作日制作 → 发货\n\n"
+                    f"🎀 **包装：** 精美礼盒包装，自用送人皆宜。"
+                ),
+                "en": (
+                    f"🎨 **{pn_en}** — Each piece is a unique creation from the heart.\n\n"
+                    f"🌟 **Why Choose Us:**\n"
+                    f"• 🖐️ Handcrafted with love and attention\n"
+                    f"• 🎁 Personalization available — make it truly yours\n"
+                    f"• 🌿 Eco-friendly materials, kind to planet & pets\n"
+                    f"• 📸 Real product photos, what you see is what you get\n\n"
+                    f"📏 **Sizing:** Check our size chart and pick the perfect fit.\n"
+                    f"💌 **Custom Order:** Order → Send customization request → 3-5 business days → Ship\n\n"
+                    f"🎀 **Packaging:** Beautiful gift box, perfect for gifting."
+                ),
+            },
+            "custom_store": {
+                "zh": (
+                    f"🏠 **{pn}** — 品牌直营，品质保证。\n\n"
+                    f"**产品详情：**\n"
+                    f"• 品牌直供，省去中间环节，价格更优\n"
+                    f"• 严格品控，每件产品出厂前经过3道检验\n"
+                    f"• 专属客服，一对一解答您的疑问\n"
+                    f"• 会员专享价，注册即享9折优惠\n\n"
+                    f"**规格：** 标准款 / 升级款可选\n"
+                    f"**发货：** 48小时内发货，顺丰包邮\n"
+                    f"**售后：** 7天无理由退换，1年质保"
+                ),
+                "en": (
+                    f"🏠 **{pn_en}** — Direct from our brand, quality guaranteed.\n\n"
+                    f"**Product Details:**\n"
+                    f"• Direct from brand, no middlemen, better prices\n"
+                    f"• Rigorous QC — 3 inspections before shipping\n"
+                    f"• Dedicated support, 1-on-1 assistance\n"
+                    f"• Member exclusive: 10% off on registration\n\n"
+                    f"**Options:** Standard / Premium\n"
+                    f"**Shipping:** Ships in 48h, free express delivery\n"
+                    f"**Warranty:** 7-day returns, 1-year guarantee"
+                ),
+            },
+        }
+        description = desc_templates.get(platform_key, desc_templates["shopify"]).get(lang_z, desc_templates["shopify"]["zh"])
+
+        stock = product.get("qty", 50)
+        safety_stock = max(5, int(stock * 0.15))
+
+        seo_tags_cn = f"{pn},宠物用品,萌爪,{pn_en},宠物"
+        seo_tags_en = f"{pn_en},pet supplies,dog,cat,{pn},pawsitive"
+
+        return {
+            "title": title,
+            "description": description,
+            "price": price,
+            "cost": cost,
+            "stock": stock,
+            "safety_stock": safety_stock,
+            "img_key": img_key,
+            "platform": platform_key,
+            "platform_name": pf["name"],
+            "platform_icon": pf["icon"],
+            "seo_tags": seo_tags_en if lang_z == "en" else seo_tags_cn,
+            "listing_url": f"https://{pf['domain']}/products/{pn_en.lower().replace(' ','-')}",
+        }
+
+    # ── 产品列表（含上架状态）──
+    products_for_listing = []
+    for p in st.session_state.products:
+        pn = p.get("name", "")
+        status = st.session_state.listing_product_status.get(pn, "待上架")
+        status_en = "Pending" if status == "待上架" else "Listed"
+        products_for_listing.append({**p, "listing_status": status, "listing_status_en": status_en})
+
+    tab_list, tab_history = st.tabs([
+        T("📤 上架操作", "📤 List Product"),
+        T("📋 上架记录", "📋 Listing History"),
+    ])
+
+    with tab_list:
+        st.markdown(T("### 🎯 选择产品上架", "### 🎯 Select Product to List"))
+
+        # ── 产品卡片网格 ──
+        cols = st.columns(min(len(products_for_listing), 4))
+        selected_product_idx = st.session_state.get("listing_selected_idx", 0)
+
+        for i, p in enumerate(products_for_listing):
+            col_idx = i % 4
+            with cols[col_idx]:
+                b64 = get_img(p.get("img", ""))
+                status = p["listing_status"]
+                is_pending = status == "待上架"
+                border = "2px solid #FF8C42" if i == selected_product_idx else ("1px solid #e0d5cc" if is_pending else "1px solid #34a853")
+                bg = "#FFF8F0" if i == selected_product_idx else ("#fff" if is_pending else "#f0faf0")
+
+                status_badge_cn = "🟡 待上架" if is_pending else "🟢 已上架"
+                status_badge_en = "🟡 Pending" if is_pending else "🟢 Listed"
+
+                card_html = f'''<div style="border:{border};border-radius:8px;padding:10px;text-align:center;background:{bg};min-height:170px;">
+                    <span style="font-size:10px;font-weight:600;">{status_badge_en if is_en else status_badge_cn}</span><br>'''
+                if b64:
+                    card_html += f'<img src="data:image/jpeg;base64,{b64}" style="width:64px;height:64px;border-radius:6px;object-fit:cover;margin:4px 0;"><br>'
+                else:
+                    card_html += '<span style="font-size:28px;">🐾</span><br>'
+                card_html += f'''<div style="font-weight:600;font-size:12px;">{pname(p)}</div>
+                    <div style="font-size:11px;color:#FF8C42;font-weight:700;">¥{p["price"]:.2f}</div>
+                    <div style="font-size:10px;color:#888;">成本 ¥{p["cost"]:.2f}</div></div>'''
+                st.markdown(card_html, unsafe_allow_html=True)
+                if st.button(T("选择","Select"), key=f"listing_sel_{i}", width="stretch"):
+                    st.session_state.listing_selected_idx = i
+                    st.rerun()
+
+        st.divider()
+
+        # ── 选中产品详情 ──
+        selected = products_for_listing[selected_product_idx]
+        sel_pending = selected["listing_status"] == "待上架"
+
+        detail_cols = st.columns([1, 2])
+        with detail_cols[0]:
+            b64 = get_img(selected.get("img", ""))
+            if b64:
+                st.markdown(f'<img src="data:image/jpeg;base64,{b64}" style="width:160px;height:160px;border-radius:10px;object-fit:cover;">', unsafe_allow_html=True)
+
+        with detail_cols[1]:
+            st.markdown(f"### {pname(selected)}")
+            sel_status = selected["listing_status"]
+            st.markdown(f'<span style="color:{"#34a853" if sel_status != "待上架" else "#f4b400"};font-weight:600;">{"🟢 " + T("已上架","Listed") if sel_status != "待上架" else "🟡 " + T("待上架","Pending")}</span>', unsafe_allow_html=True)
+
+            mc = st.columns(3)
+            mc[0].metric(T("售价","Price"), f"¥{selected['price']:.2f}")
+            mc[1].metric(T("成本","Cost"), f"¥{selected['cost']:.2f}")
+            mc[2].metric(T("毛利","Margin"), f"¥{selected['price'] - selected['cost']:.2f}",
+                        delta=f"{(selected['price'] - selected['cost']) / selected['price'] * 100:.0f}%")
+
+            comp = selected.get("competitors", 0)
+            growth = selected.get("search_growth", 0)
+            st.caption(T(
+                f"竞品数: {comp} · 搜索增长: {growth}% · 复购: {selected.get('annual_purchases',1)}次/年",
+                f"Competitors: {comp} · Search Growth: {growth}% · Repurchase: {selected.get('annual_purchases',1)}/yr"
+            ))
+
+        st.divider()
+
+        # ── 平台选择 ──
+        st.markdown(T("### 🛒 选择上架平台", "### 🛒 Choose Platform"))
+
+        plat_cols = st.columns(3)
+        selected_platform = st.session_state.get("listing_selected_platform", "shopify")
+
+        for i, (pkey, pinfo) in enumerate(PLATFORMS.items()):
+            with plat_cols[i]:
+                is_sel_plat = selected_platform == pkey
+                border_p = "2px solid #FF8C42" if is_sel_plat else "1px solid #e0d5cc"
+                bg_p = "#FFF8F0" if is_sel_plat else "#fff"
+                st.markdown(f"""<div style="border:{border_p};border-radius:8px;padding:12px;text-align:center;background:{bg_p};min-height:110px;">
+                    <div style="font-size:28px;">{pinfo['icon']}</div>
+                    <div style="font-weight:700;font-size:13px;">{pinfo['name']}</div>
+                    <div style="font-size:10px;color:#888;">{pinfo['desc_en'] if is_en else pinfo['desc_cn']}</div>
+                </div>""", unsafe_allow_html=True)
+                if st.button(T("选择","Select") + f" {pinfo['name']}", key=f"plat_sel_{pkey}", width="stretch",
+                             type="primary" if is_sel_plat else "secondary"):
+                    st.session_state.listing_selected_platform = pkey
+                    st.rerun()
+
+        st.divider()
+
+        # ── Listing 预览 ──
+        listing = generate_listing(selected, selected_platform, "en" if is_en else "zh")
+
+        st.markdown(T("### 📝 Listing 预览", "### 📝 Listing Preview"))
+        with st.container(border=True):
+            st.markdown(f"**{T('标题','Title')}:** {listing['title']}")
+            st.caption(T(f"SEO 标签: {listing['seo_tags']}", f"SEO Tags: {listing['seo_tags']}"))
+
+            lc = st.columns(4)
+            lc[0].metric(T("售价","Price"), f"¥{listing['price']:.2f}")
+            lc[1].metric(T("成本","Cost"), f"¥{listing['cost']:.2f}")
+            lc[2].metric(T("库存","Stock"), int(listing['stock']))
+            lc[3].metric(T("安全库存","Safety"), int(listing['safety_stock']))
+
+            with st.expander(T("📄 完整描述", "📄 Full Description"), expanded=True):
+                st.markdown(listing["description"])
+
+        st.divider()
+
+        # ── 一键上架按钮 ──
+        if sel_pending:
+            st.markdown(T("### 🚀 确认上架", "### 🚀 Confirm Listing"))
+
+            st.markdown(T(
+                f"即将将 **{pname(selected)}** 上架到 **{listing['platform_icon']} {listing['platform_name']}**",
+                f"About to list **{pname(selected)}** on **{listing['platform_icon']} {listing['platform_name']}**"
+            ))
+
+            st.caption(T(
+                f"上架链接预览: [{listing['listing_url']}]({listing['listing_url']})",
+                f"Listing URL preview: [{listing['listing_url']}]({listing['listing_url']})"
+            ))
+
+            if st.button(T("🚀 一键上架", "🚀 List Now"), type="primary", width="stretch", key="do_listing"):
+                with st.spinner(T("正在上架到平台...", "Publishing to platform...")):
+                    import time
+                    time.sleep(1.5)
+
+                record = {
+                    "product": pname(selected),
+                    "product_en": selected.get("name_en", ""),
+                    "platform": listing["platform"],
+                    "platform_name": listing["platform_name"],
+                    "platform_icon": listing["platform_icon"],
+                    "title": listing["title"],
+                    "price": listing["price"],
+                    "stock": int(listing["stock"]),
+                    "listing_url": listing["listing_url"],
+                    "seo_tags": listing["seo_tags"],
+                    "listed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "listed_by": current_user(),
+                    "status": "success",
+                }
+                st.session_state.listing_records.insert(0, record)
+                st.session_state.listing_product_status[pname(selected)] = "已上架"
+
+                st.success(T(
+                    f"✅ **{pname(selected)}** 已成功上架到 **{listing['platform_name']}**！",
+                    f"✅ **{pname(selected)}** successfully listed on **{listing['platform_name']}**!"
+                ))
+                st.balloons()
+                st.info(T(
+                    f"🔗 商品链接: [{listing['listing_url']}]({listing['listing_url']})\n\n📅 上架时间: {record['listed_at']}\n👤 操作人: {record['listed_by']}",
+                    f"🔗 Product URL: [{listing['listing_url']}]({listing['listing_url']})\n\n📅 Listed at: {record['listed_at']}\n👤 By: {record['listed_by']}"
+                ))
+                time.sleep(2)
+                st.rerun()
+        else:
+            st.info(T(
+                f"✅ **{pname(selected)}** 已经上架，如需重新上架到其他平台请先在「上架记录」中删除后重试。",
+                f"✅ **{pname(selected)}** is already listed. Delete from 'Listing History' to re-list on another platform."
+            ))
+
+    # ── 上架记录 Tab ──
+    with tab_history:
+        st.markdown(T("### 📋 上架历史记录", "### 📋 Listing History"))
+
+        records = st.session_state.listing_records
+        if not records:
+            st.info(T("暂无上架记录。请先在上架操作中完成商品上架。", "No listing records yet. List a product first."))
+        else:
+            st.caption(T(f"共 {len(records)} 条记录", f"{len(records)} records total"))
+
+            # 统计卡片
+            platforms_count = {}
+            for r in records:
+                pf = r["platform_name"]
+                platforms_count[pf] = platforms_count.get(pf, 0) + 1
+
+            stat_cols = st.columns(min(len(platforms_count), 4) if platforms_count else 1)
+            for i, (pf, cnt) in enumerate(platforms_count.items()):
+                with stat_cols[i % 4]:
+                    icon = next((p["icon"] for p in PLATFORMS.values() if p["name"] == pf), "📦")
+                    st.markdown(f"""<div class="card-hover ok" style="min-height:60px;text-align:center;">
+                        <div style="font-size:20px;">{icon}</div>
+                        <div style="font-size:18px;font-weight:700;color:#FF8C42;">{cnt}</div>
+                        <div style="font-size:10px;color:#888;">{pf}</div>
+                    </div>""", unsafe_allow_html=True)
+
+            st.divider()
+
+            # 记录列表
+            for i, r in enumerate(records):
+                with st.container(border=True):
+                    rc = st.columns([0.8, 2.5, 1.5, 1.5, 1.5, 1.5])
+                    with rc[0]:
+                        st.markdown(f"{r['platform_icon']}")
+                    with rc[1]:
+                        st.markdown(f"**{r['product']}**")
+                        if r.get("product_en"):
+                            st.caption(r["product_en"])
+                    with rc[2]:
+                        st.markdown(T(f"平台","Platform"))
+                        st.caption(r["platform_name"])
+                    with rc[3]:
+                        st.markdown(T(f"售价","Price"))
+                        st.caption(f"¥{r['price']:.2f}")
+                    with rc[4]:
+                        st.markdown(T(f"库存","Stock"))
+                        st.caption(str(int(r.get("stock", 0))))
+                    with rc[5]:
+                        st.markdown(T(f"时间","Time"))
+                        st.caption(r["listed_at"])
+
+                    with st.expander(T(f"📄 查看 Listing — {r['title'][:40]}...", f"📄 View Listing — {r['title'][:40]}..."), expanded=False):
+                        st.markdown(f"**{T('标题','Title')}:** {r['title']}")
+                        st.markdown(f"**{T('链接','URL')}:** [{r['listing_url']}]({r['listing_url']})")
+                        st.caption(f"**SEO Tags:** {r.get('seo_tags','')}")
+                        st.caption(T(
+                            f"上架人: {r.get('listed_by','')} · 状态: {'✅ 成功' if r.get('status') == 'success' else '❌ 失败'}",
+                            f"Listed by: {r.get('listed_by','')} · Status: {'✅ Success' if r.get('status') == 'success' else '❌ Failed'}"
+                        ))
+
+                    if st.button(T("🗑️ 删除此记录", "🗑️ Delete Record"), key=f"del_listing_{i}"):
+                        product_name = r.get("product", "")
+                        if product_name in st.session_state.listing_product_status:
+                            del st.session_state.listing_product_status[product_name]
+                        st.session_state.listing_records.pop(i)
+                        st.rerun()
 
 st.divider()
 st.image(load_image("footer"), width='stretch')
