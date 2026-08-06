@@ -17,7 +17,11 @@ from retail_sense.agent import VirtualAgent
 from retail_sense.agents import SalesPipeline
 from retail_sense.cases import get_cases
 from retail_sense.product_images import get_img
-from retail_sense.logistics import get_mock_orders, get_warehouse_inventory, allocate_order, get_logistics_tracking
+from retail_sense.logistics import (
+    get_mock_orders, get_warehouse_inventory, allocate_order,
+    get_logistics_tracking, generate_waybill_no, simulate_delivery_tracking,
+    get_courier_info, DELIVERY_PIPELINE, COURIER_PREFIXES, COURIER_NAMES,
+)
 
 st.set_page_config(page_title="RetailSense", page_icon="🐾", layout="wide")
 
@@ -65,19 +69,12 @@ h3 {{ font-size: {fs+2}px !important; }}
 """, unsafe_allow_html=True)
 
 IMAGE_DIR = os.path.join(os.path.dirname(__file__), "images")
-PRODUCT_IMG_DIR = os.path.join(IMAGE_DIR, "products")
 DEFAULT_IMAGES = {"banner":os.path.join(IMAGE_DIR,"banner.jpg"),"sidebar":os.path.join(IMAGE_DIR,"sidebar.jpg"),"footer":os.path.join(IMAGE_DIR,"footer.jpg")}
 def load_image(key):
     path = st.session_state.get(f"img_{key}", DEFAULT_IMAGES[key])
     if os.path.exists(path): return path
     if path.startswith("http"): return path
     return DEFAULT_IMAGES[key]
-def product_img(name):
-    """获取产品图片"""
-    mapping = {"刻字狗牌":"dog-tag","发光项圈":"led-collar","珐琅名牌":"enamel-plate","牵引绳套装":"leash-set","宠物领结":"bow-tie","亚克力牌":"acrylic-tag","宠物手链":"bracelet","换牙零食":"treats"}
-    fname = mapping.get(name, "")
-    path = os.path.join(PRODUCT_IMG_DIR, f"{fname}.jpg")
-    return f'<img src="/app/static/{fname}.jpg" style="width:80px;height:80px;border-radius:6px;object-fit:cover;border:1px solid #eee;">' if os.path.exists(path) else "🐾"
 
 for key in DEFAULT_IMAGES:
     if f"img_{key}" not in st.session_state: st.session_state[f"img_{key}"] = DEFAULT_IMAGES[key]
@@ -283,7 +280,6 @@ elif page == "选品评分":
 
     scorer = ProductScorer()
     for i, p in enumerate(PRODUCTS):
-        img_path = os.path.join(PRODUCT_IMG_DIR, f"{p['img']}.jpg") if os.path.exists(os.path.join(PRODUCT_IMG_DIR, f"{p['img']}.jpg")) else ""
         label = f"🐾 {pname(p)} — ¥{p['price']:.2f}"
         with st.expander(label):
             cimg, c1, c2, c3 = st.columns([0.8, 2, 2, 2])
@@ -533,7 +529,7 @@ elif page == "销售自动化":
 # ══ 物流配发 ══
 elif page == "物流配发":
     st.title(T("物流配发","Logistics & Fulfillment"))
-    st.caption(T("订单看板 · 智能配货 · 物流追踪","Order Board · Smart Allocation · Tracking"))
+    st.caption(T("订单看板 · 智能配货 · 虚拟快递追踪","Order Board · Smart Allocation · Virtual Delivery Tracking"))
 
     orders = get_mock_orders()
     warehouse = get_warehouse_inventory()
@@ -542,11 +538,17 @@ elif page == "物流配发":
     if "logistics_page" not in st.session_state:
         st.session_state.logistics_page = 1
     if "alloc_results" not in st.session_state:
-        st.session_state.alloc_results = {}
+        st.session_state.alloc_results = {}       # {order_id: allocation_result}
     if "logistics_expanded" not in st.session_state:
-        st.session_state.logistics_expanded = set()
+        st.session_state.logistics_expanded = set()  # expanded order_ids
     if "tracking_cache" not in st.session_state:
-        st.session_state.tracking_cache = {}
+        st.session_state.tracking_cache = {}       # {order_id: tracking_data}
+    if "waybill_cache" not in st.session_state:
+        st.session_state.waybill_cache = {}        # {order_id: waybill_no}
+    if "ship_timestamps" not in st.session_state:
+        st.session_state.ship_timestamps = {}      # {order_id: ISO datetime}
+    if "alloc_clicked" not in st.session_state:
+        st.session_state.alloc_clicked = set()     # orders where alloc was just triggered
 
     # ── 顶部总览卡片 ──
     pending = [o for o in orders if o["status"] == "pending"]
@@ -619,31 +621,54 @@ elif page == "物流配发":
             st.markdown(f"**{total_qty}**")
 
         with row_cols[4]:
+            # ── 虚拟发货订单显示绿色已发货 ──
+            is_virtual_shipped = oid in st.session_state.waybill_cache
+            display_status = "shipped" if is_virtual_shipped else o["status"]
+            vs_text, vs_color = status_map.get(display_status, ("❓", "#888"))
             st.markdown(
-                f'<span style="color:{status_color};font-weight:600;font-size:12px;">{status_text}</span>',
+                f'<span style="color:{vs_color};font-weight:600;font-size:12px;">{vs_text}</span>',
                 unsafe_allow_html=True,
             )
 
         with row_cols[5]:
-            if o["status"] == "pending":
+            # ── 检查是否通过虚拟系统发货 ──
+            is_virtual_shipped = oid in st.session_state.waybill_cache
+            effective_status = "shipped" if is_virtual_shipped else o["status"]
+
+            if effective_status == "pending":
                 alloc_key = f"alloc_{oid}"
                 if st.button(T("配货","Alloc"), key=f"alloc_btn_{oid}", type="primary"):
-                    # 如果已配过跳转到结果页去重新配
                     result = allocate_order(o, warehouse)
                     st.session_state.alloc_results[oid] = result
                     st.session_state.logistics_expanded.add(oid)
+                    st.session_state.alloc_clicked.add(oid)
                     st.rerun()
-            elif o["status"] == "shipped":
+                # 配货完成后显示确认发货按钮（在展开区域内）
+                if oid in st.session_state.alloc_results and oid in st.session_state.logistics_expanded:
+                    if st.session_state.alloc_results[oid]["all_ok"]:
+                        if st.button(T("✅ 确认发货","✅ Confirm Ship"), key=f"confirm_ship_{oid}", type="primary"):
+                            waybill = generate_waybill_no()
+                            st.session_state.waybill_cache[oid] = waybill
+                            st.session_state.ship_timestamps[oid] = datetime.now().isoformat()
+                            st.session_state.tracking_cache.pop(oid, None)  # 清除旧缓存
+                            st.rerun()
+
+            elif effective_status == "shipped":
                 if st.button(T("追踪","Track"), key=f"track_btn_{oid}"):
                     if oid in st.session_state.logistics_expanded:
                         st.session_state.logistics_expanded.discard(oid)
                     else:
                         st.session_state.logistics_expanded.add(oid)
-                        # 缓存追踪数据
-                        if oid not in st.session_state.tracking_cache:
+                        # 虚拟发货订单用虚拟追踪，否则用旧追踪
+                        if oid in st.session_state.waybill_cache:
+                            shipped_at = datetime.fromisoformat(st.session_state.ship_timestamps[oid])
+                            st.session_state.tracking_cache[oid] = simulate_delivery_tracking(
+                                st.session_state.waybill_cache[oid], shipped_at
+                            )
+                        elif oid not in st.session_state.tracking_cache:
                             st.session_state.tracking_cache[oid] = get_logistics_tracking(o.get("tracking_no",""))
                     st.rerun()
-            elif o["status"] == "picking":
+            elif effective_status == "picking":
                 st.caption(T("拣货中…","Picking…"))
 
         with row_cols[6]:
@@ -654,85 +679,164 @@ elif page == "物流配发":
                     st.session_state.logistics_expanded.discard(oid)
                 else:
                     st.session_state.logistics_expanded.add(oid)
-                    if o["status"] == "shipped" and oid not in st.session_state.tracking_cache:
-                        st.session_state.tracking_cache[oid] = get_logistics_tracking(o.get("tracking_no",""))
+                    # 虚拟发货或普通已发货：加载追踪
+                    is_vs = oid in st.session_state.waybill_cache
+                    if (o["status"] == "shipped" or is_vs) and oid not in st.session_state.tracking_cache:
+                        if is_vs:
+                            shipped_at = datetime.fromisoformat(st.session_state.ship_timestamps[oid])
+                            st.session_state.tracking_cache[oid] = simulate_delivery_tracking(
+                                st.session_state.waybill_cache[oid], shipped_at
+                            )
+                        else:
+                            st.session_state.tracking_cache[oid] = get_logistics_tracking(o.get("tracking_no",""))
                 st.rerun()
 
-        # ── 行内展开：配货结果 ──
-        if o["status"] == "pending" and oid in st.session_state.alloc_results and oid in st.session_state.logistics_expanded:
+        # ── 行内展开：配货结果 (SKU + 库位 + 数量 + ✅/❌) ──
+        is_virtual_shipped = oid in st.session_state.waybill_cache
+        effective_status = "shipped" if is_virtual_shipped else o["status"]
+
+        if oid in st.session_state.alloc_results and oid in st.session_state.logistics_expanded:
             result = st.session_state.alloc_results[oid]
             with st.container(border=True):
                 if result["all_ok"]:
                     st.success(T("✅ 配货成功 — 库存充足，可立即发货","✅ Allocated — Ready to ship"))
                 else:
                     st.error(T("⚠️ 部分缺货 — 请查看明细","⚠️ Partial Shortage — Check details"))
+                # ── 配货明细表 (Allocation Detail Table) ──
                 for item in result["items"]:
                     icon = "✅" if item["ok"] else "❌"
                     loc_str = f"{item['location']} ({item['zone' if not is_en else 'zone_en']})"
                     if item["ok"]:
                         st.markdown(
                             T(
-                                f"{icon} **{item['name']}** — 配 {item['allocated']}/{item['needed']} 件 | 库位: {loc_str}",
-                                f"{icon} **{item['name_en']}** — {item['allocated']}/{item['needed']} pcs | Loc: {loc_str}",
+                                f"{icon} **{item['name']}** (SKU: `{item['sku']}`) — 配 {item['allocated']}/{item['needed']} 件 | 库位: {loc_str}",
+                                f"{icon} **{item['name_en']}** (SKU: `{item['sku']}`) — {item['allocated']}/{item['needed']} pcs | Loc: {loc_str}",
                             )
                         )
                     else:
                         st.markdown(
                             T(
-                                f"{icon} **{item['name']}** — 缺 {item['shortage']} 件 (需 {item['needed']} / 存 {item['available']}) | 库位: {loc_str}",
-                                f"{icon} **{item['name_en']}** — Short {item['shortage']} (need {item['needed']} / avail {item['available']}) | Loc: {loc_str}",
+                                f"{icon} **{item['name']}** (SKU: `{item['sku']}`) — 缺 {item['shortage']} 件 (需 {item['needed']} / 存 {item['available']}) | 库位: {loc_str}",
+                                f"{icon} **{item['name_en']}** (SKU: `{item['sku']}`) — Short {item['shortage']} (need {item['needed']} / avail {item['available']}) | Loc: {loc_str}",
                             )
                         )
 
-        # ── 行内展开：物流追踪 ──
-        if o["status"] == "shipped" and oid in st.session_state.logistics_expanded:
-            courier = o.get("courier_en" if is_en else "courier", o.get("courier",""))
-            tn = o.get("tracking_no","")
-            tracking = st.session_state.tracking_cache.get(oid, get_logistics_tracking(tn))
-            with st.container(border=True):
-                st.markdown(
-                    T(
-                        f"🚚 **{courier}** · 运单号: `{tn}`",
-                        f"🚚 **{courier}** · Tracking: `{tn}`",
-                    )
-                )
-                # 物流进度条
-                step_labels = [
-                    (T("待揽收","Await Pickup"), "📋"),
-                    (T("运输中","In Transit"), "🚛"),
-                    (T("派送中","Out for Delivery"), "🏃"),
-                    (T("已签收","Delivered"), "✅"),
-                ]
-                current = tracking["current_step"]
-                pc = st.columns(4)
-                for i, (label, icon) in enumerate(step_labels):
-                    with pc[i]:
-                        if i < current:
-                            bg, tc = "#34a853", "#fff"
-                        elif i == current:
-                            bg, tc = "#FF8C42", "#fff"
-                        else:
-                            bg, tc = "#e0e0e0", "#888"
-                        st.markdown(f"""<div style="background:{bg};color:{tc};border-radius:6px;padding:6px 2px;text-align:center;font-size:10px;font-weight:600;">
-                            {icon}<br>{label}
-                        </div>""", unsafe_allow_html=True)
-                # 轨迹时间线
-                st.markdown("---")
-                for evt in tracking["events"]:
-                    icon_map = {
-                        "待揽收":"📋","运输中":"🚛","派送中":"🏃","已签收":"✅",
-                        "Awaiting Pickup":"📋","In Transit":"🚛","Out for Delivery":"🏃","Delivered":"✅",
-                    }
-                    icon = icon_map.get(evt.get("status_cn",""), "📍")
+        # ── 行内展开：虚拟快递追踪 / 物流追踪 ──
+        if (effective_status == "shipped") and oid in st.session_state.logistics_expanded:
+            is_virtual = oid in st.session_state.waybill_cache
+
+            if is_virtual:
+                # ── 虚拟快递配送管线 (Virtual Delivery Pipeline) ──
+                waybill_no = st.session_state.waybill_cache[oid]
+                shipped_at = datetime.fromisoformat(st.session_state.ship_timestamps[oid])
+                tracking = st.session_state.tracking_cache.get(oid)
+                if tracking is None:
+                    tracking = simulate_delivery_tracking(waybill_no, shipped_at)
+                    st.session_state.tracking_cache[oid] = tracking
+
+                courier = tracking.get("courier_en" if is_en else "courier", tracking.get("courier", ""))
+                with st.container(border=True):
                     st.markdown(
-                        f"{icon} **{evt['time']}** — {evt['status_cn' if not is_en else 'status_en']}"
+                        T(
+                            f"🚚 **{courier}** · 运单号: `{waybill_no}` · 发货时间: {tracking['shipped_at']}",
+                            f"🚚 **{courier}** · Tracking: `{waybill_no}` · Shipped: {tracking['shipped_at']}",
+                        )
                     )
-                    st.caption(evt.get("desc_cn" if not is_en else "desc_en",""))
-                if tracking["eta"]:
-                    st.info(T(f"📅 预计到达：{tracking['eta']}",f"📅 ETA: {tracking['eta']}"))
+                    # 六阶段进度条
+                    stage_count = tracking["total_stages"]
+                    stage_labels = [
+                        (T(DELIVERY_PIPELINE[i][0], DELIVERY_PIPELINE[i][1]), ["📋","📦","🏭","🚛","🏃","✅"][i])
+                        for i in range(stage_count)
+                    ]
+                    current = tracking["current_stage"]
+                    # 两行显示 6 阶段
+                    row1_cols = st.columns(3)
+                    row2_cols = st.columns(3)
+                    for i, (label, icon) in enumerate(stage_labels):
+                        if i < 3:
+                            with row1_cols[i]:
+                                if i < current:
+                                    bg, tc = "#34a853", "#fff"
+                                elif i == current:
+                                    bg, tc = "#FF8C42", "#fff"
+                                else:
+                                    bg, tc = "#e0e0e0", "#888"
+                                st.markdown(f"""<div style="background:{bg};color:{tc};border-radius:6px;padding:4px 2px;text-align:center;font-size:10px;font-weight:600;">
+                                    {icon}<br>{label}
+                                </div>""", unsafe_allow_html=True)
+                        else:
+                            with row2_cols[i - 3]:
+                                if i < current:
+                                    bg, tc = "#34a853", "#fff"
+                                elif i == current:
+                                    bg, tc = "#FF8C42", "#fff"
+                                else:
+                                    bg, tc = "#e0e0e0", "#888"
+                                st.markdown(f"""<div style="background:{bg};color:{tc};border-radius:6px;padding:4px 2px;text-align:center;font-size:10px;font-weight:600;">
+                                    {icon}<br>{label}
+                                </div>""", unsafe_allow_html=True)
+                    # 轨迹时间线
+                    st.markdown("---")
+                    for evt in tracking["events"]:
+                        icon_map = {
+                            "已接单":"📋","配货完成":"📦","已出库":"🏭","运输中":"🚛","派送中":"🏃","已签收":"✅",
+                            "Order Accepted":"📋","Allocation Done":"📦","Dispatched":"🏭",
+                            "In Transit":"🚛","Out for Delivery":"🏃","Delivered":"✅",
+                        }
+                        icon = icon_map.get(evt.get("status_cn",""), "📍")
+                        st.markdown(
+                            f"{icon} **{evt['time']}** — {evt['status_cn' if not is_en else 'status_en']}"
+                        )
+                        st.caption(evt.get("desc_cn" if not is_en else "desc_en",""))
+                    if tracking["eta"]:
+                        st.info(T(f"📅 预计到达：{tracking['eta']}",f"📅 ETA: {tracking['eta']}"))
+            else:
+                # ── 原始物流追踪 (Original 4-stage Tracking) ──
+                courier = o.get("courier_en" if is_en else "courier", o.get("courier",""))
+                tn = o.get("tracking_no","")
+                tracking = st.session_state.tracking_cache.get(oid, get_logistics_tracking(tn))
+                with st.container(border=True):
+                    st.markdown(
+                        T(
+                            f"🚚 **{courier}** · 运单号: `{tn}`",
+                            f"🚚 **{courier}** · Tracking: `{tn}`",
+                        )
+                    )
+                    step_labels = [
+                        (T("待揽收","Await Pickup"), "📋"),
+                        (T("运输中","In Transit"), "🚛"),
+                        (T("派送中","Out for Delivery"), "🏃"),
+                        (T("已签收","Delivered"), "✅"),
+                    ]
+                    current = tracking["current_step"]
+                    pc = st.columns(4)
+                    for i, (label, icon) in enumerate(step_labels):
+                        with pc[i]:
+                            if i < current:
+                                bg, tc = "#34a853", "#fff"
+                            elif i == current:
+                                bg, tc = "#FF8C42", "#fff"
+                            else:
+                                bg, tc = "#e0e0e0", "#888"
+                            st.markdown(f"""<div style="background:{bg};color:{tc};border-radius:6px;padding:6px 2px;text-align:center;font-size:10px;font-weight:600;">
+                                {icon}<br>{label}
+                            </div>""", unsafe_allow_html=True)
+                    st.markdown("---")
+                    for evt in tracking["events"]:
+                        icon_map = {
+                            "待揽收":"📋","运输中":"🚛","派送中":"🏃","已签收":"✅",
+                            "Awaiting Pickup":"📋","In Transit":"🚛","Out for Delivery":"🏃","Delivered":"✅",
+                        }
+                        icon = icon_map.get(evt.get("status_cn",""), "📍")
+                        st.markdown(
+                            f"{icon} **{evt['time']}** — {evt['status_cn' if not is_en else 'status_en']}"
+                        )
+                        st.caption(evt.get("desc_cn" if not is_en else "desc_en",""))
+                    if tracking["eta"]:
+                        st.info(T(f"📅 预计到达：{tracking['eta']}",f"📅 ETA: {tracking['eta']}"))
 
         # ── 行内展开：拣货中详情 ──
-        if o["status"] == "picking" and oid in st.session_state.logistics_expanded:
+        if effective_status == "picking" and oid in st.session_state.logistics_expanded:
             addr = o.get("address_en" if is_en else "address", o.get("address",""))
             with st.container(border=True):
                 st.markdown(
@@ -809,6 +913,183 @@ elif page == "物流配发":
                 <div style="font-size:12px;font-weight:600;">{inv_item['name' if not is_en else 'name_en']}</div>
                 <div style="font-size:10px;color:#888;">{inv_item['sku']} · {inv_item['location']} ({inv_item['zone']})</div>
             </div>""", unsafe_allow_html=True)
+
+    # ── 订单API接入口 (Order API Integration) ──
+    st.divider()
+    with st.expander(T("🔌 订单API接入口 / Order API Webhook Integration", "🔌 Order API Webhook Integration"), expanded=False):
+        st.markdown(T("""
+### 📡 Webhook 端点 / Webhook Endpoint
+
+**POST** `/api/orders/webhook`
+```
+Content-Type: application/json
+X-Signature: HMAC-SHA256 (签名验证 / signature verification)
+```
+
+#### 订单数据 Schema / Order Data Schema
+
+```json
+{{
+  "order_id": "EXT-20260806-001",
+  "platform": "shopify",
+  "customer": {{
+    "name": "张三",
+    "email": "zhangsan@example.com",
+    "phone": "+86-13800138000"
+  }},
+  "shipping_address": {{
+    "line1": "北京市朝阳区望京SOHO T3-1208",
+    "city": "北京",
+    "province": "北京市",
+    "postal_code": "100102",
+    "country": "CN"
+  }},
+  "items": [
+    {{
+      "sku": "BP-001",
+      "name": "刻字狗牌",
+      "qty": 2,
+      "unit_price": 12.99
+    }}
+  ],
+  "total": 25.98,
+  "currency": "CNY",
+  "created_at": "2026-08-06T15:30:00+08:00",
+  "notes": "加急处理"
+}}
+```
+""", """
+### 📡 Webhook Endpoint
+
+**POST** `/api/orders/webhook`
+```
+Content-Type: application/json
+X-Signature: HMAC-SHA256
+```
+
+#### Order Data Schema
+
+```json
+{{
+  "order_id": "EXT-20260806-001",
+  "platform": "shopify",
+  "customer": {{
+    "name": "John Doe",
+    "email": "john@example.com",
+    "phone": "+1-555-0100"
+  }},
+  "shipping_address": {{
+    "line1": "1000 Lujiazui Ring Rd",
+    "city": "Shanghai",
+    "province": "Shanghai",
+    "postal_code": "200120",
+    "country": "CN"
+  }},
+  "items": [
+    {{
+      "sku": "BP-001",
+      "name": "Engraved Dog Tag",
+      "qty": 2,
+      "unit_price": 12.99
+    }}
+  ],
+  "total": 25.98,
+  "currency": "USD",
+  "created_at": "2026-08-06T15:30:00Z",
+  "notes": "Urgent"
+}}
+```
+"""))
+
+        st.markdown(T("""
+---
+### 🛍️ Shopify 接入步骤 / Shopify Integration
+
+| 步骤 | 操作 |
+|------|------|
+| 1 | Shopify Admin → **Settings** → **Notifications** → **Webhooks** |
+| 2 | Create webhook → Event: **Order creation** |
+| 3 | Format: **JSON** |
+| 4 | URL: `https://your-domain.com/api/orders/webhook` |
+| 5 | HMAC 验证: 用 App Secret 计算 `X-Shopify-Hmac-SHA256` 并比对 |
+
+**订单字段映射 / Field Mapping:**
+| Shopify | RetailSense |
+|---------|-------------|
+| `order.id` | `order_id` |
+| `line_items[].sku` | `items[].sku` |
+| `line_items[].quantity` | `items[].qty` |
+| `line_items[].price` | `items[].unit_price` |
+| `shipping_address` | `shipping_address` |
+| `total_price` | `total` |
+
+---
+### 🧶 Etsy / WooCommerce / 独立站接入 / Custom Store
+
+通用流程：将平台订单转换为上述 JSON Schema，POST 到 `/api/orders/webhook`。
+推荐在服务端实现幂等去重（按 `order_id`），防止重复 webhook 推送。
+
+**独立站 Python 示例 / Custom Store Python Example:**
+```python
+import requests, hmac, hashlib, json
+
+WEBHOOK_URL = "https://your-domain.com/api/orders/webhook"
+WEBHOOK_SECRET = b"your-secret-key"
+
+order_data = {{"order_id": "...", "platform": "custom", ...}}
+body = json.dumps(order_data).encode()
+signature = hmac.new(WEBHOOK_SECRET, body, hashlib.sha256).hexdigest()
+
+requests.post(WEBHOOK_URL, data=body, headers={{
+    "Content-Type": "application/json",
+    "X-Signature": signature,
+}})
+```
+""", """
+---
+### 🛍️ Shopify Integration
+
+| Step | Action |
+|------|--------|
+| 1 | Shopify Admin → **Settings** → **Notifications** → **Webhooks** |
+| 2 | Create webhook → Event: **Order creation** |
+| 3 | Format: **JSON** |
+| 4 | URL: `https://your-domain.com/api/orders/webhook` |
+| 5 | Verify HMAC: compute `X-Shopify-Hmac-SHA256` with App Secret |
+
+**Field Mapping:**
+| Shopify | RetailSense |
+|---------|-------------|
+| `order.id` | `order_id` |
+| `line_items[].sku` | `items[].sku` |
+| `line_items[].quantity` | `items[].qty` |
+| `line_items[].price` | `items[].unit_price` |
+| `shipping_address` | `shipping_address` |
+| `total_price` | `total` |
+
+---
+### 🧶 Etsy / WooCommerce / Custom Store
+
+Convert platform orders to the JSON Schema above, POST to `/api/orders/webhook`.
+Implement idempotency by `order_id` to prevent duplicate webhooks.
+
+**Custom Store Python Example:**
+```python
+import requests, hmac, hashlib, json
+
+WEBHOOK_URL = "https://your-domain.com/api/orders/webhook"
+WEBHOOK_SECRET = b"your-secret-key"
+
+order_data = {{"order_id": "...", "platform": "custom", ...}}
+body = json.dumps(order_data).encode()
+signature = hmac.new(WEBHOOK_SECRET, body, hashlib.sha256).hexdigest()
+
+requests.post(WEBHOOK_URL, data=body, headers={{
+    "Content-Type": "application/json",
+    "X-Signature": signature,
+}})
+```
+"""))
 
 st.divider()
 st.image(load_image("footer"), width='stretch')
