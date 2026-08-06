@@ -1,5 +1,5 @@
 """
-RetailSense v2.3 — AI 零售选品与库存决策系统
+RetailSense v2.4 — AI 零售选品与库存决策系统
 """
 import streamlit as st
 import pandas as pd
@@ -13,7 +13,7 @@ from retail_sense.intent import IntentEngine
 from retail_sense.sales_script import SalesScriptGenerator
 from retail_sense.dataloader import *
 from retail_sense.regions import *
-from retail_sense.agent import VirtualAgent
+from retail_sense.agent import VirtualAgent, AgentResponse
 from retail_sense.agents import SalesPipeline
 from retail_sense.cases import get_cases
 from retail_sense.product_images import get_img, get_all_product_keys, get_product_display_name
@@ -22,6 +22,10 @@ from retail_sense.logistics import (
     get_mock_orders, get_warehouse_inventory, allocate_order,
     get_logistics_tracking, generate_waybill_no, simulate_delivery_tracking,
     get_courier_info, DELIVERY_PIPELINE, COURIER_PREFIXES, COURIER_NAMES,
+)
+from retail_sense.data_persistence import (
+    load_allocation_log, save_allocation_log,
+    load_listing_log, save_listing_log,
 )
 
 st.set_page_config(page_title="RetailSense", page_icon="🐾", layout="wide")
@@ -200,7 +204,7 @@ if not is_logged_in():
 
         st.markdown(
             f'<div class="login-footer-text">'
-            f'{_T("RetailSense v2.3 · 宠物温馨风 · 管理员可通过系统预设账号登录", "RetailSense v2.3 · Pet-friendly · Admin login via system preset")}'
+            f'{_T("RetailSense v2.4 · 宠物温馨风 · 管理员可通过系统预设账号登录", "RetailSense v2.4 · Pet-friendly · Admin login via system preset")}'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -225,12 +229,35 @@ if "company_file" not in st.session_state: st.session_state.company_file = "萌�
 if "agent_msg" not in st.session_state: st.session_state.agent_msg = []
 if "first_visit" not in st.session_state: st.session_state.first_visit = True
 
+# ── 持久化辅助函数 / Persistence Helpers ──
+def _persist_allocation():
+    """保存当前配货数据到文件 / Save current allocation data to file"""
+    cf = st.session_state.get("company_file", "")
+    if cf and "alloc_results" in st.session_state:
+        save_allocation_log(
+            cf,
+            st.session_state.alloc_results,
+            st.session_state.get("waybill_cache", {}),
+            st.session_state.get("ship_timestamps", {}),
+        )
+
+def _persist_listing():
+    """保存当前上架数据到文件 / Save current listing data to file"""
+    cf = st.session_state.get("company_file", "")
+    if cf and "listing_records" in st.session_state:
+        save_listing_log(
+            cf,
+            st.session_state.listing_records,
+            st.session_state.get("listing_product_status", {}),
+        )
+
 is_en = st.session_state.lang == "en"
 T = lambda cn, en: en if is_en else cn
 def pname(p): return p.get("name_en" if is_en else "name", p.get("name",""))
 
-VERSION = "v2.3"
+VERSION = "v2.4"
 CHANGELOG = """
+**v2.4 (2026-08-06)** 🤖 管家v3.0：真实数据查询+操作建议+思考过程
 **v2.3 (2026-08-04)** 🆕 卡片库存+搜索置顶+真实平台+产品图
 **v2.2 (2026-08-04)** 🆕 案例库+引导+更新日志+悬停
 **v2.1 (2026-08-04)** 🤖 多Agent+双语+库存整数化
@@ -306,6 +333,9 @@ with st.sidebar:
                 current_idx = company_names.index(current_company_file) if current_company_file in company_names else 0
                 selected = st.selectbox(T("选择公司","Select Company"), company_names, index=current_idx)
                 if selected != st.session_state.company_file:
+                    # 切换公司前保存当前数据 / Save current data before switching company
+                    _persist_allocation()
+                    _persist_listing()
                     st.session_state.company_file = selected; st.rerun()
 
         st.divider()
@@ -413,6 +443,9 @@ with st.sidebar:
 
 page = st.session_state.nav
 agent = VirtualAgent()
+# 设置管家上下文
+if company:
+    agent.context["company"] = company.get("company", "") if st.session_state.lang == "zh" else company.get("company_en", "")
 
 # ══ 工作台 ══
 if page == "工作台":
@@ -423,14 +456,69 @@ if page == "工作台":
 
     # 顶部搜索（管家助手）
     with st.container(border=True):
-        msg = st.text_input(T("🔍 向管家提问（营收/库存/选品/帮助）","🔍 Ask assistant (revenue/stock/recommend/help)"), key="agent_input_top",
-                           placeholder=T("输入命令如：今日营收、库存预警、推荐选品...","e.g. revenue, low stock, top products..."))
+        st.markdown(T(
+            "### 🤖 管家助手 (v3.0) / Assistant (v3.0)",
+            "### 🤖 Assistant (v3.0)"
+        ))
+        col_q, col_btn = st.columns([5, 1])
+        with col_q:
+            msg = st.text_input(
+                T("💬 向我提问（查库存/营收/利润/补货建议...）",
+                  "💬 Ask me anything (stock/revenue/profit/restock...)"),
+                key="agent_input_top",
+                placeholder=T(
+                    "如：刻字狗牌库存多少 | 本周利润最高产品 | 哪些库存低了 | 建议补货",
+                    "e.g. LED collar stock | most profitable product | low stock alert | restock advice"
+                ),
+                label_visibility="collapsed",
+            )
         if msg:
-            resp = agent.process(msg, company_data=company, transactions=txns, inventory=inv)
+            with st.spinner(T("🤔 管家思考中...", "🤔 Analyzing...")):
+                resp = agent.process(
+                    msg,
+                    company_data=company,
+                    transactions=txns,
+                    inventory=inv,
+                    lang=st.session_state.lang,
+                )
+            # 存储为结构化数据
             st.session_state.agent_msg.append(("user", msg))
-            st.session_state.agent_msg.append(("agent", resp))
-        for role, text in st.session_state.agent_msg[-4:]:
-            (st.chat_message("user") if role=="user" else st.chat_message("assistant")).write(text)
+            st.session_state.agent_msg.append(("agent_v3", resp))
+        # 渲染消息历史
+        for entry in st.session_state.agent_msg[-6:]:
+            role = entry[0]
+            if role == "user":
+                with st.chat_message("user"):
+                    st.write(entry[1])
+            elif role == "agent_v3":
+                resp_obj = entry[1]
+                with st.chat_message("assistant"):
+                    # 思考过程（可折叠）
+                    if hasattr(resp_obj, 'thinking') and resp_obj.thinking:
+                        with st.expander(
+                            T(f"🧠 思考过程（{len(resp_obj.thinking)}步）",
+                              f"🧠 Thinking ({len(resp_obj.thinking)} steps)"),
+                            expanded=False,
+                        ):
+                            for step in resp_obj.thinking:
+                                st.caption(step)
+                    # 主回答
+                    if hasattr(resp_obj, 'answer'):
+                        st.markdown(resp_obj.answer)
+                    else:
+                        st.write(str(resp_obj))
+                    # 操作建议
+                    if hasattr(resp_obj, 'suggestions') and resp_obj.suggestions:
+                        with st.expander(
+                            T("💡 操作建议", "💡 Suggestions"),
+                            expanded=True,
+                        ):
+                            for s in resp_obj.suggestions:
+                                st.info(s)
+            elif role == "agent":
+                # 兼容旧版纯文本响应
+                with st.chat_message("assistant"):
+                    st.write(entry[1])
 
     st.title("RetailSense")
     st.caption(T("AI 零售选品 · 定价 · 库存 · 出入库仪表盘","AI Retail · Pricing · Inventory · Dashboard"))
@@ -843,19 +931,28 @@ elif page == "物流配发":
     orders = get_mock_orders()
     warehouse = get_warehouse_inventory()
 
-    # ── 初始化 session_state ──
+    # ── 初始化 session_state / Init session_state ──
     if "logistics_page" not in st.session_state:
         st.session_state.logistics_page = 1
     if "alloc_results" not in st.session_state:
-        st.session_state.alloc_results = {}       # {order_id: allocation_result}
+        # 从文件恢复配货记录 / Restore allocation records from file
+        data = load_allocation_log(st.session_state.company_file)
+        if data:
+            st.session_state.alloc_results = data.get("alloc_results", {})
+            st.session_state.waybill_cache = data.get("waybill_cache", {})
+            st.session_state.ship_timestamps = data.get("ship_timestamps", {})
+        else:
+            st.session_state.alloc_results = {}       # {order_id: allocation_result}
+            st.session_state.waybill_cache = {}        # {order_id: waybill_no}
+            st.session_state.ship_timestamps = {}      # {order_id: ISO datetime}
     if "logistics_expanded" not in st.session_state:
         st.session_state.logistics_expanded = set()  # expanded order_ids
     if "tracking_cache" not in st.session_state:
         st.session_state.tracking_cache = {}       # {order_id: tracking_data}
     if "waybill_cache" not in st.session_state:
-        st.session_state.waybill_cache = {}        # {order_id: waybill_no}
+        st.session_state.waybill_cache = {}        # already set above if loaded
     if "ship_timestamps" not in st.session_state:
-        st.session_state.ship_timestamps = {}      # {order_id: ISO datetime}
+        st.session_state.ship_timestamps = {}      # already set above if loaded
     if "alloc_clicked" not in st.session_state:
         st.session_state.alloc_clicked = set()     # orders where alloc was just triggered
 
@@ -951,6 +1048,7 @@ elif page == "物流配发":
                     st.session_state.alloc_results[oid] = result
                     st.session_state.logistics_expanded.add(oid)
                     st.session_state.alloc_clicked.add(oid)
+                    _persist_allocation()
                     st.rerun()
                 # 配货完成后显示确认发货按钮（在展开区域内）
                 if oid in st.session_state.alloc_results and oid in st.session_state.logistics_expanded:
@@ -960,6 +1058,7 @@ elif page == "物流配发":
                             st.session_state.waybill_cache[oid] = waybill
                             st.session_state.ship_timestamps[oid] = datetime.now().isoformat()
                             st.session_state.tracking_cache.pop(oid, None)  # 清除旧缓存
+                            _persist_allocation()
                             st.rerun()
 
             elif effective_status == "shipped":
@@ -1408,11 +1507,16 @@ elif page == "商品上架":
     st.title(T("商品上架","Product Listing"))
     st.caption(T("选品 → 一键上架到 Shopify / Etsy / 独立站","Select → List to Shopify / Etsy / Custom Store"))
 
-    # ── 初始化 listing session_state ──
+    # ── 初始化 listing session_state / Init listing session_state ──
     if "listing_records" not in st.session_state:
-        st.session_state.listing_records = []
-    if "listing_product_status" not in st.session_state:
-        st.session_state.listing_product_status = {}
+        # 从文件恢复上架记录 / Restore listing records from file
+        data = load_listing_log(st.session_state.company_file)
+        if data:
+            st.session_state.listing_records = data.get("listing_records", [])
+            st.session_state.listing_product_status = data.get("listing_product_status", {})
+        else:
+            st.session_state.listing_records = []
+            st.session_state.listing_product_status = {}
 
     # ── 上架平台配置 ──
     PLATFORMS = {
@@ -1730,6 +1834,7 @@ elif page == "商品上架":
                 }
                 st.session_state.listing_records.insert(0, record)
                 st.session_state.listing_product_status[pname(selected)] = "已上架"
+                _persist_listing()
 
                 st.success(T(
                     f"✅ **{pname(selected)}** 已成功上架到 **{listing['platform_name']}**！",
@@ -1813,6 +1918,7 @@ elif page == "商品上架":
                         if product_name in st.session_state.listing_product_status:
                             del st.session_state.listing_product_status[product_name]
                         st.session_state.listing_records.pop(i)
+                        _persist_listing()
                         st.rerun()
 
 st.divider()
