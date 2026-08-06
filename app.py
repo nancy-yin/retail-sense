@@ -37,6 +37,8 @@ if "lang" not in st.session_state: st.session_state.lang = "zh"
 
 # ── 宠物温馨风 CSS ──
 fs = int(st.session_state.font_size.replace("px",""))
+fs_min = max(10, fs - 2)   # 平板缩小 2px
+fs_xs = max(9, fs - 4)     # 手机缩小 4px
 st.markdown(f"""
 <style>
 html, body, [class*="css"] {{ font-size: {fs}px !important; }}
@@ -71,6 +73,111 @@ h3 {{ font-size: {fs+2}px !important; }}
 .card-hover.warn {{ border-left: 3px solid #f4b400; }}
 .card-hover.danger {{ border-left: 3px solid #ea4335; }}
 .card-hover.ok {{ border-left: 3px solid #34a853; }}
+
+/* ── 响应式适配 / Responsive ── */
+
+/* 平板 (≤768px) */
+@media screen and (max-width: 768px) {{
+    /* 侧边栏缩小 */
+    [data-testid="stSidebar"] {{
+        width: 200px !important;
+        min-width: 200px !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stButton"] button {{
+        padding: 6px 8px !important;
+        font-size: {fs_min}px !important;
+    }}
+
+    /* 表格横向滚动 */
+    [data-testid="stDataFrame"] > div {{
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }}
+    [data-testid="stTable"] {{
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }}
+
+    /* 卡片全宽 — 强制 columns 内卡片换行 */
+    [data-testid="stHorizontalBlock"] > [data-testid="column"] {{
+        flex: 1 1 100% !important;
+        max-width: 100% !important;
+        min-width: 100% !important;
+    }}
+
+    /* 字体缩小 */
+    html, body, [class*="css"] {{ font-size: {fs_min}px !important; }}
+    h1 {{ font-size: {fs_min+5}px !important; }}
+    h2 {{ font-size: {fs_min+3}px !important; }}
+    h3 {{ font-size: {fs_min+1}px !important; }}
+
+    /* 指标字体缩小 */
+    [data-testid="stMetricValue"] {{ font-size: 15px !important; }}
+    [data-testid="stMetricLabel"] {{ font-size: 10px !important; }}
+
+    /* 登录页容器 */
+    .login-container {{
+        padding: 20px 12px !important;
+    }}
+    .login-header {{ font-size: 24px !important; }}
+    .login-mascot {{ font-size: 42px !important; }}
+
+    /* 卡片最小高度自适应 */
+    .card-hover {{ min-height: 55px !important; padding: 10px !important; }}
+}}
+
+/* 手机 (≤480px) */
+@media screen and (max-width: 480px) {{
+    /* 侧边栏折叠 — 更窄 */
+    [data-testid="stSidebar"] {{
+        width: 140px !important;
+        min-width: 140px !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stButton"] button {{
+        padding: 4px 6px !important;
+        font-size: {fs_xs}px !important;
+    }}
+
+    /* 进一步缩小字体 */
+    html, body, [class*="css"] {{ font-size: {fs_xs}px !important; }}
+    h1 {{ font-size: {fs_xs+4}px !important; }}
+    h2 {{ font-size: {fs_xs+2}px !important; }}
+    h3 {{ font-size: {fs_xs}px !important; }}
+
+    /* 指标进一步缩小 */
+    [data-testid="stMetricValue"] {{ font-size: 13px !important; }}
+    [data-testid="stMetricLabel"] {{ font-size: 9px !important; }}
+    [data-testid="stMetricDelta"] {{ font-size: 9px !important; }}
+
+    /* 登录页 */
+    .login-container {{
+        padding: 16px 8px !important;
+    }}
+    .login-header {{ font-size: 20px !important; }}
+    .login-mascot {{ font-size: 36px !important; }}
+
+    /* 卡片更紧凑 */
+    .card-hover {{ min-height: 45px !important; padding: 8px !important; }}
+
+    /* 按钮大小 */
+    [data-testid="stButton"] button {{
+        padding: 4px 10px !important;
+        font-size: {fs_xs}px !important;
+    }}
+
+    /* 分页按钮紧凑 */
+    [data-testid="stHorizontalBlock"] button {{
+        padding: 2px 6px !important;
+        font-size: {fs_xs}px !important;
+    }}
+
+    /* 导出下载区域 */
+    .export-download-area {{
+        padding: 16px 12px !important;
+    }}
+    .export-icon {{ font-size: 36px !important; }}
+    .export-title {{ font-size: 15px !important; }}
+}}
 </style>
 """, unsafe_allow_html=True)
 
