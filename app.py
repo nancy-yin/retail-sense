@@ -16,7 +16,7 @@ from retail_sense.regions import *
 from retail_sense.agent import VirtualAgent
 from retail_sense.agents import SalesPipeline
 from retail_sense.cases import get_cases
-from retail_sense.product_images import get_img
+from retail_sense.product_images import get_img, get_all_product_keys, get_product_display_name
 from retail_sense.logistics import (
     get_mock_orders, get_warehouse_inventory, allocate_order,
     get_logistics_tracking, generate_waybill_no, simulate_delivery_tracking,
@@ -137,6 +137,49 @@ with st.sidebar:
             selected = st.selectbox(T("选择公司","Select Company"), company_names, index=current_idx)
             if selected != st.session_state.company_file:
                 st.session_state.company_file = selected; st.rerun()
+
+        st.divider()
+        with st.expander(T("🖼️ 图片管理", "🖼️ Image Manager"), expanded=False):
+            st.caption(T("上传本地产品图片以替换默认图（支持 jpg/png/webp）",
+                         "Upload local product images to replace defaults (jpg/png/webp)"))
+            image_dir = os.path.join(os.path.dirname(__file__), "images", "products")
+            os.makedirs(image_dir, exist_ok=True)
+
+            for key in get_all_product_keys():
+                display_name = get_product_display_name(key)
+                filepath = os.path.join(image_dir, f"{key}.jpg")
+
+                c_img, c_upload = st.columns([0.8, 3])
+                with c_img:
+                    b64 = get_img(key)
+                    if b64:
+                        st.markdown(
+                            f'<img src="data:image/jpeg;base64,{b64}" '
+                            f'style="width:48px;height:48px;border-radius:4px;object-fit:cover;">',
+                            unsafe_allow_html=True,
+                        )
+                with c_upload:
+                    has_custom = os.path.isfile(filepath)
+                    status_badge = "🟢 " + T("已自定义", "Custom") if has_custom else "⚪ " + T("默认图", "Default")
+                    st.caption(f"**{display_name}** — {status_badge}")
+                    uploaded = st.file_uploader(
+                        T(f"替换 {display_name}", f"Replace {display_name}"),
+                        type=["jpg", "jpeg", "png", "webp"],
+                        key=f"img_upload_{key}",
+                        label_visibility="collapsed",
+                    )
+                    if uploaded is not None:
+                        with open(filepath, "wb") as f:
+                            f.write(uploaded.getbuffer())
+                        st.success(T(f"✅ {display_name} 已更新！", f"✅ {display_name} updated!"))
+                        st.rerun()
+
+                    # Reset button to remove custom image
+                    if has_custom:
+                        if st.button(T("恢复默认", "Reset"), key=f"img_reset_{key}"):
+                            if os.path.isfile(filepath):
+                                os.remove(filepath)
+                            st.rerun()
     st.divider()
     with st.expander(T("关于","About")):
         st.markdown(T("**RetailSense** 由一位前瑞幸咖啡店长构建。","**RetailSense** built by a former Luckin Coffee store manager."))
