@@ -275,7 +275,7 @@ with st.sidebar:
 
     st.divider()
     st.image(load_image("sidebar"), width='stretch')
-    for name in ["工作台","选品评分","定价模型","库存监控","案例库","销售自动化","物流配发","商品上架"]:
+    for name in ["工作台","案例库","选品评分","定价模型","销售自动化","库存监控","商品上架","物流配发"]:
         kind = "primary" if st.session_state.nav == name else "secondary"
         if st.button(name, width='stretch', type=kind):
             st.session_state.nav = name; st.rerun()
@@ -629,7 +629,7 @@ elif page == "定价模型":
             ship = st.number_input(T("物流费","Shipping"), value=1.50, step=0.10, format="%.2f")
         with c3:
             plat = st.number_input(T("平台费","Platform Fee"), value=0.85, step=0.10, format="%.2f")
-            target = st.slider(T("目标利润率","Target Margin"), 0.20, 0.70, 0.45, 0.05, format="%.0f%%")
+            target = st.slider(T("目标利润率","Target Margin"), 20, 70, 45, 5, format="%d%%")
 
         st.divider()
         cc1, cc2 = st.columns(2)
@@ -639,13 +639,13 @@ elif page == "定价模型":
                                    index=1 if is_en else 0)
             symbol = currency.split()[0]
         with cc2:
-            st.caption(T(f"当前单位：{symbol}（数值不换算，纯展示）",
-                         f"Unit: {symbol} (no conversion, display only)"))
+            st.caption(T(f"当前单位：{symbol}（展示用，不换算汇率）",
+                         f"Unit: {symbol} (display only)"))
 
     if st.button(T("计算定价","Calculate"), type="primary"):
         cost = CostBreakdown(raw, proc, pack, ship, plat)
         model = PricingModel()
-        result = model.suggest_price(cost, target)
+        result = model.suggest_price(cost, target/100)
 
         items = [(T("裸件","Raw"),raw),(T("加工","Proc"),proc),(T("包装","Pack"),pack),(T("物流","Ship"),ship),(T("平台","Plat"),plat)]
         cc = st.columns(5)
