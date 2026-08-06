@@ -25,46 +25,41 @@ if "font_size" not in st.session_state: st.session_state.font_size = "13px"
 if "lang" not in st.session_state: st.session_state.lang = "zh"
 
 # ── 宠物温馨风 CSS ──
+fs = int(st.session_state.font_size.replace("px",""))
 st.markdown(f"""
 <style>
-/* 全局字体 */
-html, body, [class*="css"] {{ font-size: {st.session_state.font_size} !important; }}
-h1 {{ font-size: {max(18, int(st.session_state.font_size.replace('px','')) + 9)}px !important; }}
-h2 {{ font-size: {max(14, int(st.session_state.font_size.replace('px','')) + 4)}px !important; }}
-h3 {{ font-size: {max(13, int(st.session_state.font_size.replace('px','')) + 2)}px !important; }}
+html, body, [class*="css"] {{ font-size: {fs}px !important; }}
+h1 {{ font-size: {fs+9}px !important; }}
+h2 {{ font-size: {fs+4}px !important; }}
+h3 {{ font-size: {fs+2}px !important; }}
 
-/* 渐变按钮 */
-[data-testid="stButton"] button {
-    border-radius: 6px !important; transition: all 0.2s ease !important; font-weight: 500 !important; font-size: 13px !important;
-}
-[data-testid="stButton"] button:hover { transform: translateY(-1px) !important; box-shadow: 0 3px 10px rgba(0,0,0,0.08) !important; }
-[data-testid="stButton"] button[kind="primary"] {
+[data-testid="stButton"] button {{
+    border-radius: 6px !important; transition: all 0.2s ease !important; font-weight: 500 !important; font-size: {fs}px !important;
+}}
+[data-testid="stButton"] button:hover {{ transform: translateY(-1px) !important; box-shadow: 0 3px 10px rgba(0,0,0,0.08) !important; }}
+[data-testid="stButton"] button[kind="primary"] {{
     background: linear-gradient(135deg, #FF8C42, #FF6B35) !important; color: white !important; border: none !important;
-}
-[data-testid="stButton"] button[kind="primary"]:hover { box-shadow: 0 4px 14px rgba(255,107,53,0.25) !important; transform: translateY(-1px) !important; }
+}}
+[data-testid="stButton"] button[kind="primary"]:hover {{ box-shadow: 0 4px 14px rgba(255,107,53,0.25) !important; transform: translateY(-1px) !important; }}
 
-/* 容器卡片 */
-[data-testid="stVerticalBlockBorderWrapper"] > div { border-radius: 8px !important; transition: all 0.2s ease !important; }
-[data-testid="stVerticalBlockBorderWrapper"]:hover > div { box-shadow: 0 3px 12px rgba(0,0,0,0.06) !important; }
+[data-testid="stVerticalBlockBorderWrapper"] > div {{ border-radius: 8px !important; transition: all 0.2s ease !important; }}
+[data-testid="stVerticalBlockBorderWrapper"]:hover > div {{ box-shadow: 0 3px 12px rgba(0,0,0,0.06) !important; }}
 
-/* Metric 紧凑 */
-[data-testid="stMetricValue"] { font-size: 18px !important; font-weight: 700 !important; }
-[data-testid="stMetricLabel"] { font-size: 11px !important; }
-[data-testid="stMetricDelta"] { font-size: 11px !important; }
+[data-testid="stMetricValue"] {{ font-size: 18px !important; font-weight: 700 !important; }}
+[data-testid="stMetricLabel"] {{ font-size: 11px !important; }}
+[data-testid="stMetricDelta"] {{ font-size: 11px !important; }}
 
-/* 侧边栏 */
-[data-testid="stSidebar"] [data-testid="stButton"] button {
-    border-radius: 6px !important; text-align: left !important; padding: 8px 12px !important; margin: 1px 0 !important; font-size: 13px !important;
-}
-[data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"] { background: linear-gradient(135deg, #FF8C42, #FF6B35) !important; }
-[data-testid="stSidebar"] [data-testid="stButton"] button[kind="secondary"] { background: transparent !important; border: 1px solid #e0d5cc !important; color: #5a4a3a !important; }
+[data-testid="stSidebar"] [data-testid="stButton"] button {{
+    border-radius: 6px !important; text-align: left !important; padding: 8px 12px !important; margin: 1px 0 !important; font-size: {fs}px !important;
+}}
+[data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"] {{ background: linear-gradient(135deg, #FF8C42, #FF6B35) !important; }}
+[data-testid="stSidebar"] [data-testid="stButton"] button[kind="secondary"] {{ background: transparent !important; border: 1px solid #e0d5cc !important; color: #5a4a3a !important; }}
 
-/* Card hover for inventory cards */
-.card-hover { border: 1px solid #e8e0d8; border-radius: 8px; padding: 14px; text-align: center; transition: all 0.2s; background: #fff; }
-.card-hover:hover { box-shadow: 0 3px 12px rgba(0,0,0,0.06); transform: translateY(-1px); }
-.card-hover.warn { border-left: 3px solid #f4b400; }
-.card-hover.danger { border-left: 3px solid #ea4335; }
-.card-hover.ok { border-left: 3px solid #34a853; }
+.card-hover {{ border: 1px solid #e8e0d8; border-radius: 8px; padding: 14px; text-align: center; transition: all 0.2s; background: #fff; }}
+.card-hover:hover {{ box-shadow: 0 3px 12px rgba(0,0,0,0.06); transform: translateY(-1px); }}
+.card-hover.warn {{ border-left: 3px solid #f4b400; }}
+.card-hover.danger {{ border-left: 3px solid #ea4335; }}
+.card-hover.ok {{ border-left: 3px solid #34a853; }}
 </style>
 """, unsafe_allow_html=True)
 
