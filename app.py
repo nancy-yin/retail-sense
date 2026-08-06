@@ -634,20 +634,27 @@ elif page == "定价模型":
         st.divider()
         cc1, cc2 = st.columns(2)
         with cc1:
+            # 汇率：以 ¥1 为基准
+            RATES = {"¥ CNY":1.0,"$ USD":0.14,"€ EUR":0.13,"£ GBP":0.11,"¥ JPY":16.0,"A$ AUD":0.21,"C$ CAD":0.19}
             currency = st.selectbox(T("货币单位","Currency"),
-                                   ["¥ CNY","$ USD","€ EUR","£ GBP","¥ JPY","A$ AUD","C$ CAD"],
+                                   list(RATES.keys()),
                                    index=1 if is_en else 0)
             symbol = currency.split()[0]
+            rate = RATES[currency]
         with cc2:
-            st.caption(T(f"当前单位：{symbol}（展示用，不换算汇率）",
-                         f"Unit: {symbol} (display only)"))
+            if rate != 1.0:
+                st.caption(T(f"汇率 1{chr(165)}={rate:.2f}{symbol}",f"Rate 1{chr(165)}={rate:.2f}{symbol}"))
+            else:
+                st.caption(T("基准货币 ¥ CNY","Base currency ¥ CNY"))
 
     if st.button(T("计算定价","Calculate"), type="primary"):
         cost = CostBreakdown(raw, proc, pack, ship, plat)
         model = PricingModel()
         result = model.suggest_price(cost, target/100)
 
-        items = [(T("裸件","Raw"),raw),(T("加工","Proc"),proc),(T("包装","Pack"),pack),(T("物流","Ship"),ship),(T("平台","Plat"),plat)]
+        def c(val): return round(val * rate, 2)
+
+        items = [(T("裸件","Raw"),c(raw)),(T("加工","Proc"),c(proc)),(T("包装","Pack"),c(pack)),(T("物流","Ship"),c(ship)),(T("平台","Plat"),c(plat))]
         cc = st.columns(5)
         for i, (lbl, val) in enumerate(items):
             with cc[i]:
@@ -656,9 +663,9 @@ elif page == "定价模型":
                     <div style="font-size:10px;color:#888;">{lbl}</div></div>""", unsafe_allow_html=True)
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric(T("总成本","Total Cost"), f"{symbol}{result['total_cost']:.2f}")
-        m2.metric(T("建议售价","Price"), f"{symbol}{result['suggested_price']:.2f}")
-        m3.metric(T("利润","Profit"), f"{symbol}{result['profit']:.2f}")
+        m1.metric(T("总成本","Total Cost"), f"{symbol}{c(result['total_cost']):.2f}")
+        m2.metric(T("建议售价","Price"), f"{symbol}{c(result['suggested_price']):.2f}")
+        m3.metric(T("利润","Profit"), f"{symbol}{c(result['profit']):.2f}")
         m4.metric(T("利润率","Margin"), f"{result['margin_rate']:.1%}",
                  delta=T("达标","OK") if result['above_redline'] else T("未达标","Low"),
                  delta_color="normal" if result['above_redline'] else "inverse")
