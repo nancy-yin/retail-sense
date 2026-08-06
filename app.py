@@ -12,6 +12,7 @@ from retail_sense.copywriter import CopyGenerator
 from retail_sense.intent import IntentEngine
 from retail_sense.sales_script import SalesScriptGenerator
 from retail_sense.dataloader import *
+from retail_sense.dataloader import get_demo_transactions, get_demo_inventory
 from retail_sense.regions import *
 from retail_sense.agent import VirtualAgent, AgentResponse
 from retail_sense.agents import SalesPipeline
@@ -271,6 +272,11 @@ company = load_company_data(current_company_file) if st.session_state.use_compan
 inv = get_inventory(company, st.session_state.use_company)
 txns = get_transactions(company, st.session_state.use_company)
 
+# 无公司接入时使用示例数据（展示用）
+if not inv and not txns:
+    inv = get_demo_inventory()
+    txns = get_demo_transactions()
+
 # ── 侧边栏 ──
 with st.sidebar:
     # 🐾 当前用户信息
@@ -302,7 +308,7 @@ with st.sidebar:
 
     st.divider()
     st.image(load_image("sidebar"), width='stretch')
-    for name in ["工作台","案例库","选品评分","定价模型","销售自动化","库存监控","商品上架","物流配发"]:
+    for name in ["工作台","案例库","选品评分","定价模型","销售自动化","库存监控","商品上架","物流配发","导出报表"]:
         kind = "primary" if st.session_state.nav == name else "secondary"
         if st.button(name, width='stretch', type=kind):
             st.session_state.nav = name; st.rerun()
@@ -525,8 +531,10 @@ if page == "工作台":
 
     if st.session_state.use_company and company:
         st.success(T(f"已接入：{company['company']}","Connected: "+company['company_en']))
+    elif txns and inv:
+        st.info(T("手动模式 — 使用示例数据","Manual mode — Demo data"))
     else:
-        st.info(T("手动模式","Manual mode"))
+        st.info(T("手动模式 — 暂无数据","Manual mode — No data"))
 
     today = daily_summary(txns, 1) if txns else {"revenue":0,"orders":0,"profit":0,"cost":0}
     week = daily_summary(txns, 7) if txns else {"revenue":0,"orders":0,"profit":0,"cost":0}
@@ -764,14 +772,10 @@ elif page == "库存监控":
     if st.session_state.use_company and company:
         st.success(T(f"数据源：{company['company']}","Source: "+company['company_en']))
     else:
-        st.info(T("手动模式","Manual mode"))
-        inv = [
-            {"sku":"BP-001","name":"刻字狗牌","name_en":"Engraved Dog Tag","qty":45,"cost":2.80,"price":12.99,"daily_avg":9,"lead_days":3,"img":"dog-tag"},
-            {"sku":"BP-002","name":"发光项圈","name_en":"LED Collar","qty":12,"cost":5.50,"price":24.99,"daily_avg":6,"lead_days":5,"img":"led-collar"},
-            {"sku":"BP-003","name":"珐琅名牌","name_en":"Enamel Nameplate","qty":120,"cost":3.20,"price":16.99,"daily_avg":3,"lead_days":3,"img":"enamel-plate"},
-            {"sku":"BP-004","name":"牵引绳套装","name_en":"Leash Set","qty":0,"cost":4.50,"price":22.99,"daily_avg":4,"lead_days":4,"img":"leash-set"},
-            {"sku":"BP-005","name":"换牙零食","name_en":"Teething Treats","qty":8,"cost":3.00,"price":11.99,"daily_avg":15,"lead_days":2,"img":"treats"},
-        ]
+        st.info(T("手动模式 — 使用示例数据","Manual mode — Demo data"))
+
+    # 复用全局已加载的库存数据（公司真实数据或示例数据）
+    # inv is already set at module level from company data or demo fallback
 
     rows = []
     for i in inv:
@@ -1920,6 +1924,335 @@ elif page == "商品上架":
                         st.session_state.listing_records.pop(i)
                         _persist_listing()
                         st.rerun()
+
+# ══ 导出报表 ══
+elif page == "导出报表":
+    st.title(T("导出报表", "Export Report"))
+    st.caption(T(
+        "一键下载公司数据报告（营收 / 库存 / 产品列表）",
+        "One-click download company data report (Revenue / Inventory / Product List)"
+    ))
+
+    # ── 公司信息 ──
+    if st.session_state.use_company and company:
+        st.success(T(
+            f"已接入：{company['company']}",
+            f"Connected: {company['company_en']}"
+        ))
+        co_name = company.get("company", "")
+        co_name_en = company.get("company_en", "")
+        co_established = company.get("established", "")
+        co_currency = company.get("currency", "CNY")
+    else:
+        st.info(T("手动模式 — 使用默认产品数据", "Manual mode — using default product data"))
+        co_name = "萌爪宠物用品（杭州）"
+        co_name_en = "Mengzhua Pet Supplies (Hangzhou)"
+        co_established = "2023-08"
+        co_currency = "CNY"
+
+    # ── 计算数据摘要 ──
+    today_data = daily_summary(txns, 1) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
+    week_data = daily_summary(txns, 7) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
+    month_data = daily_summary(txns, 30) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
+    inv_sum = inventory_value_summary(inv) if inv else {
+        "total_qty": 0, "total_value": 0, "total_retail": 0,
+        "skus": 0, "low_stock": 0, "out_of_stock": 0,
+    }
+
+    # ── 数据概览卡片 ──
+    st.markdown(T("### 📊 数据概览", "### 📊 Data Overview"))
+    cc = st.columns(4)
+    cc[0].metric(
+        T("今日营收", "Today Revenue"),
+        f"¥{today_data['revenue']:,.0f}",
+        f"{today_data['orders']}{T('单', ' orders')}",
+    )
+    cc[1].metric(
+        T("本周营收", "Week Revenue"),
+        f"¥{week_data['revenue']:,.0f}",
+    )
+    cc[2].metric(
+        T("本月营收", "Month Revenue"),
+        f"¥{month_data['revenue']:,.0f}",
+    )
+    cc[3].metric(
+        T("库存总值", "Inventory Value"),
+        f"¥{inv_sum['total_retail']:,.0f}",
+        f"{inv_sum['skus']} SKU",
+    )
+
+    st.divider()
+
+    cc2 = st.columns(4)
+    cc2[0].metric(T("总库存量", "Total Qty"), inv_sum["total_qty"])
+    cc2[1].metric(T("库存成本", "Inventory Cost"), f"¥{inv_sum['total_value']:,.0f}")
+    cc2[2].metric(T("低库存品", "Low Stock"), inv_sum["low_stock"], delta_color="inverse")
+    cc2[3].metric(T("断货品", "Out of Stock"), inv_sum["out_of_stock"], delta_color="inverse")
+
+    # ── 产品列表表格 ──
+    st.divider()
+    st.markdown(T("### 📦 产品列表", "### 📦 Product List"))
+
+    if inv:
+        prod_rows = []
+        for i in inv:
+            qty = int(i.get("qty", 0))
+            daily = int(i.get("daily_avg", 1))
+            lead = i.get("lead_days", 3)
+            safety = max(1, round(daily * 7))
+            status_cn = "断货" if qty == 0 else ("低库存" if qty < safety else "正常")
+            status_en = "OOS" if qty == 0 else ("Low" if qty < safety else "Normal")
+            prod_rows.append({
+                T("产品", "Product"): pname(i),
+                "SKU": i.get("sku", ""),
+                T("库存", "Qty"): qty,
+                T("成本", "Cost"): f"¥{i.get('cost', 0):.2f}",
+                T("售价", "Price"): f"¥{i.get('price', 0):.2f}",
+                T("日均销量", "Daily Avg"): daily,
+                T("安全库存", "Safety"): safety,
+                T("状态", "Status"): status_en if is_en else status_cn,
+            })
+        st.dataframe(pd.DataFrame(prod_rows), width="stretch", hide_index=True)
+    else:
+        # 使用默认产品数据
+        default_prods = [
+            {"name": "刻字狗牌", "name_en": "Engraved Dog Tag", "qty": 45, "cost": 2.80, "price": 12.99, "daily_avg": 9, "lead_days": 3, "sku": "BP-001"},
+            {"name": "发光项圈", "name_en": "LED Collar", "qty": 12, "cost": 5.50, "price": 24.99, "daily_avg": 6, "lead_days": 5, "sku": "BP-002"},
+            {"name": "珐琅名牌", "name_en": "Enamel Nameplate", "qty": 120, "cost": 3.20, "price": 16.99, "daily_avg": 3, "lead_days": 3, "sku": "BP-003"},
+            {"name": "牵引绳套装", "name_en": "Leash Set", "qty": 0, "cost": 4.50, "price": 22.99, "daily_avg": 4, "lead_days": 4, "sku": "BP-004"},
+            {"name": "换牙零食", "name_en": "Teething Treats", "qty": 8, "cost": 3.00, "price": 11.99, "daily_avg": 15, "lead_days": 2, "sku": "BP-005"},
+        ]
+        default_rows = []
+        for i in default_prods:
+            qty = i["qty"]
+            daily = i["daily_avg"]
+            safety = max(1, round(daily * 7))
+            status_cn = "断货" if qty == 0 else ("低库存" if qty < safety else "正常")
+            status_en = "OOS" if qty == 0 else ("Low" if qty < safety else "Normal")
+            default_rows.append({
+                T("产品", "Product"): pname(i),
+                "SKU": i["sku"],
+                T("库存", "Qty"): qty,
+                T("成本", "Cost"): f"¥{i['cost']:.2f}",
+                T("售价", "Price"): f"¥{i['price']:.2f}",
+                T("日均销量", "Daily Avg"): daily,
+                T("安全库存", "Safety"): safety,
+                T("状态", "Status"): status_en if is_en else status_cn,
+            })
+        st.dataframe(pd.DataFrame(default_rows), width="stretch", hide_index=True)
+
+    # ── 交易记录（最近10条）──
+    if txns:
+        st.divider()
+        st.markdown(T("### 💰 近期交易记录", "### 💰 Recent Transactions"))
+        txn_rows = []
+        for t in sorted(txns, key=lambda x: x["date"], reverse=True)[:10]:
+            txn_type_cn = "出库" if t["type"] == "out" else "入库"
+            txn_type_en = "Out" if t["type"] == "out" else "In"
+            txn_rows.append({
+                T("日期", "Date"): t["date"],
+                T("类型", "Type"): txn_type_en if is_en else txn_type_cn,
+                T("产品", "Product"): t.get("product", ""),
+                "SKU": t.get("sku", ""),
+                T("数量", "Qty"): t["qty"],
+                T("金额", "Amount"): f"¥{t['revenue']:,.0f}" if t["type"] == "out" else "—",
+            })
+        st.dataframe(pd.DataFrame(txn_rows), width="stretch", hide_index=True)
+
+    # ── 导出下载区域 ──
+    st.divider()
+    st.markdown(T("### 📥 下载导出", "### 📥 Download Export"))
+
+    # ── 构建 CSV 内容 ──
+    import csv, io
+
+    # --- CSV 模式选择 ---
+    export_mode = st.radio(
+        T("导出内容", "Export Content"),
+        [
+            T("📊 完整报告（公司信息 + 营收 + 库存 + 产品列表）", "📊 Full Report (Company + Revenue + Inventory + Products)"),
+            T("📦 仅产品列表", "📦 Products Only"),
+            T("💰 仅营收汇总", "💰 Revenue Summary Only"),
+        ],
+        horizontal=True,
+    )
+
+    # 构建 CSV
+    csv_buffer = io.StringIO()
+    csv_writer = csv.writer(csv_buffer)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_name = co_name.replace(" ", "_").replace("（", "").replace("）", "")
+
+    if export_mode.startswith("📊") or export_mode.startswith("📦"):
+        # 写产品列表
+        csv_writer.writerow([
+            T("公司", "Company"), T("产品", "Product"), "SKU",
+            T("库存", "Qty"), T("成本", "Cost"), T("售价", "Price"),
+            T("日均销量", "Daily Avg"), T("安全库存", "Safety"), T("状态", "Status"),
+        ])
+        source = inv if inv else default_prods
+        for i in source:
+            qty = int(i.get("qty", 0))
+            daily = int(i.get("daily_avg", 1))
+            safety = max(1, round(daily * 7))
+            status_val = "OOS" if qty == 0 else ("Low" if qty < safety else "Normal")
+            csv_writer.writerow([
+                co_name,
+                pname(i),
+                i.get("sku", ""),
+                qty,
+                i.get("cost", 0),
+                i.get("price", 0),
+                daily,
+                safety,
+                status_val,
+            ])
+
+    if export_mode.startswith("📊") or export_mode.startswith("💰"):
+        csv_writer.writerow([])  # 空行分隔
+        # 营收汇总
+        csv_writer.writerow([
+            T("营收指标", "Revenue Metric"), T("金额 (¥)", "Amount (¥)"), T("备注", "Notes"),
+        ])
+        csv_writer.writerow([T("今日营收", "Today Revenue"), today_data["revenue"], f"{today_data['orders']}{T('单', ' orders')}"])
+        csv_writer.writerow([T("本周营收", "Week Revenue"), week_data["revenue"], ""])
+        csv_writer.writerow([T("本月营收", "Month Revenue"), month_data["revenue"], ""])
+        csv_writer.writerow([T("今日利润", "Today Profit"), today_data["profit"], ""])
+        csv_writer.writerow([T("本周利润", "Week Profit"), week_data["profit"], ""])
+        csv_writer.writerow([T("本月利润", "Month Profit"), month_data["profit"], ""])
+        csv_writer.writerow([])
+        # 库存汇总
+        csv_writer.writerow([T("库存指标", "Inventory Metric"), T("数值", "Value")])
+        csv_writer.writerow([T("总库存量", "Total Qty"), inv_sum["total_qty"]])
+        csv_writer.writerow([T("库存成本总值", "Total Cost Value"), inv_sum["total_value"]])
+        csv_writer.writerow([T("库存零售总值", "Total Retail Value"), inv_sum["total_retail"]])
+        csv_writer.writerow([T("SKU数", "SKU Count"), inv_sum["skus"]])
+        csv_writer.writerow([T("低库存SKU", "Low Stock SKUs"), inv_sum["low_stock"]])
+        csv_writer.writerow([T("断货SKU", "Out of Stock SKUs"), inv_sum["out_of_stock"]])
+
+    csv_data = csv_buffer.getvalue()
+
+    # ── 文本格式内容 ──
+    txt_buffer = io.StringIO()
+    txt_buffer.write(f"{'='*60}\n")
+    txt_buffer.write(f"{T('公司数据报告', 'Company Data Report')}\n")
+    txt_buffer.write(f"{'='*60}\n")
+    txt_buffer.write(f"{T('公司名称', 'Company')}: {co_name} / {co_name_en}\n")
+    txt_buffer.write(f"{T('成立时间', 'Established')}: {co_established}\n")
+    txt_buffer.write(f"{T('导出时间', 'Exported')}: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    txt_buffer.write(f"\n{'='*60}\n")
+    txt_buffer.write(f"{T('营收摘要', 'Revenue Summary')}\n")
+    txt_buffer.write(f"{'='*60}\n")
+    txt_buffer.write(f"{T('今日营收', 'Today Revenue')}: ¥{today_data['revenue']:,.0f} ({today_data['orders']}{T('单', ' orders')})\n")
+    txt_buffer.write(f"{T('本周营收', 'Week Revenue')}: ¥{week_data['revenue']:,.0f}\n")
+    txt_buffer.write(f"{T('本月营收', 'Month Revenue')}: ¥{month_data['revenue']:,.0f}\n")
+    txt_buffer.write(f"{T('今日利润', 'Today Profit')}: ¥{today_data['profit']:,.0f}\n")
+    txt_buffer.write(f"{T('本周利润', 'Week Profit')}: ¥{week_data['profit']:,.0f}\n")
+    txt_buffer.write(f"{T('本月利润', 'Month Profit')}: ¥{month_data['profit']:,.0f}\n")
+    txt_buffer.write(f"\n{'='*60}\n")
+    txt_buffer.write(f"{T('库存摘要', 'Inventory Summary')}\n")
+    txt_buffer.write(f"{'='*60}\n")
+    txt_buffer.write(f"{T('总库存量', 'Total Qty')}: {inv_sum['total_qty']}\n")
+    txt_buffer.write(f"{T('库存成本总值', 'Total Cost')}: ¥{inv_sum['total_value']:,.0f}\n")
+    txt_buffer.write(f"{T('库存零售总值', 'Total Retail')}: ¥{inv_sum['total_retail']:,.0f}\n")
+    txt_buffer.write(f"{T('SKU数', 'SKUs')}: {inv_sum['skus']}\n")
+    txt_buffer.write(f"{T('低库存', 'Low Stock')}: {inv_sum['low_stock']}\n")
+    txt_buffer.write(f"{T('断货', 'Out of Stock')}: {inv_sum['out_of_stock']}\n")
+    txt_buffer.write(f"\n{'='*60}\n")
+    txt_buffer.write(f"{T('产品列表', 'Product List')}\n")
+    txt_buffer.write(f"{'='*60}\n")
+    txt_buffer.write(f"{'Product':<20} {'SKU':<10} {'Qty':>6} {'Cost':>8} {'Price':>8} {'Status':>10}\n")
+    txt_buffer.write(f"{'-'*62}\n")
+    source = inv if inv else default_prods
+    for i in source:
+        qty = int(i.get("qty", 0))
+        daily = int(i.get("daily_avg", 1))
+        safety = max(1, round(daily * 7))
+        status_val = "OOS" if qty == 0 else ("Low" if qty < safety else "Normal")
+        txt_buffer.write(
+            f"{pname(i):<20} {i.get('sku',''):<10} {qty:>6} "
+            f"¥{i.get('cost',0):>7.2f} ¥{i.get('price',0):>7.2f} {status_val:>10}\n"
+        )
+    txt_buffer.write(f"\n{'='*60}\n")
+    txt_buffer.write(f"{T('近期交易', 'Recent Transactions')}\n")
+    txt_buffer.write(f"{'='*60}\n")
+    if txns:
+        for t in sorted(txns, key=lambda x: x["date"], reverse=True)[:10]:
+            txn_type = "OUT" if t["type"] == "out" else "IN "
+            txt_buffer.write(
+                f"{t['date']} | {txn_type} | {t.get('product',''):<12} | "
+                f"x{t['qty']:<4} | ¥{t['revenue']:,.0f}\n"
+            )
+    else:
+        txt_buffer.write(T("暂无交易数据", "No transaction data") + "\n")
+
+    txt_data = txt_buffer.getvalue()
+
+    # ── 下载按钮 ──
+    st.markdown(f"""
+    <style>
+    .export-download-area {{
+        background: linear-gradient(135deg, #FFF8F0, #FFE8D6);
+        border: 2px dashed #FF8C42;
+        border-radius: 12px;
+        padding: 24px 20px;
+        text-align: center;
+        margin: 12px 0;
+    }}
+    .export-download-area:hover {{
+        box-shadow: 0 4px 16px rgba(255, 107, 53, 0.15);
+    }}
+    .export-icon {{
+        font-size: 48px;
+        margin-bottom: 8px;
+    }}
+    .export-title {{
+        font-size: 18px;
+        font-weight: 700;
+        color: #FF8C42;
+        margin-bottom: 4px;
+    }}
+    .export-sub {{
+        font-size: 12px;
+        color: #888;
+        margin-bottom: 16px;
+    }}
+    </style>
+    <div class="export-download-area">
+        <div class="export-icon">📥</div>
+        <div class="export-title">{T('下载公司数据报告', 'Download Company Data Report')}</div>
+        <div class="export-sub">{T('选择格式，一键导出当前数据', 'Choose format, one-click export current data')}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    dl_col1, dl_col2 = st.columns(2)
+    with dl_col1:
+        st.download_button(
+            label=f"📊 {T('下载 CSV 格式', 'Download CSV')}",
+            data=csv_data,
+            file_name=f"{safe_name}_{T('数据报告','Report')}_{timestamp}.csv",
+            mime="text/csv",
+            type="primary",
+            use_container_width=True,
+        )
+    with dl_col2:
+        st.download_button(
+            label=f"📄 {T('下载 文本格式', 'Download Text')}",
+            data=txt_data,
+            file_name=f"{safe_name}_{T('数据报告','Report')}_{timestamp}.txt",
+            mime="text/plain",
+            use_container_width=True,
+        )
+
+    # ── 预览区域 ──
+    st.divider()
+    with st.expander(T("👁️ 预览导出内容", "👁️ Preview Export Content"), expanded=False):
+        preview_tab1, preview_tab2 = st.tabs(["CSV", T("文本", "Text")])
+        with preview_tab1:
+            st.code(csv_data[:3000] + ("\n..." if len(csv_data) > 3000 else ""), language="csv")
+        with preview_tab2:
+            st.code(txt_data[:3000] + ("\n..." if len(txt_data) > 3000 else ""), language="text")
 
 st.divider()
 st.image(load_image("footer"), width='stretch')
