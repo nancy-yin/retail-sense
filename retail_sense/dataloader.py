@@ -4,14 +4,30 @@ RetailSense — 数据加载器
 """
 
 from __future__ import annotations
+
 import json
 import os
 from datetime import datetime, timedelta
 
-# 公司数据目录：优先使用本地 data/ 目录，兼容 Desktop 旧路径
+from retail_sense.inventory import InventoryStatus
+
+# 虚拟公司数据目录：优先使用项目内实际包含 JSON 的目录，兼容旧路径
 _LEGACY_DIR = os.path.expanduser("~/Desktop/宠物饰品公司案例")
-_PROJECT_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
-COMPANIES_DIR = _PROJECT_DIR if os.path.isdir(_PROJECT_DIR) else _LEGACY_DIR
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_PROJECT_DIR = os.path.join(_PROJECT_ROOT, "data")
+_PROJECT_CASE_DIR = os.path.join(_PROJECT_ROOT, "宠物饰品公司案例")
+
+
+def _find_companies_dir() -> str:
+    for candidate in (_PROJECT_DIR, _PROJECT_CASE_DIR, _LEGACY_DIR):
+        if os.path.isdir(candidate) and any(
+            name.endswith(".json") for name in os.listdir(candidate)
+        ):
+            return candidate
+    return _PROJECT_DIR
+
+
+COMPANIES_DIR = _find_companies_dir()
 DEFAULT_COMPANY = "萌爪宠物用品.json"
 
 # 发现所有可用公司
@@ -22,11 +38,14 @@ def list_companies() -> list[str]:
     files = sorted([f for f in os.listdir(COMPANIES_DIR) if f.endswith('.json')])
     return files
 
-def load_company_data(company_file: str = None) -> dict | None:
-    """加载公司库存数据"""
-    path = os.path.join(COMPANIES_DIR, company_file or DEFAULT_COMPANY)
+def load_company_data(company_file: str | None = None) -> dict | None:
+    """加载虚拟公司库存数据。只允许读取已发现的 JSON 文件。"""
+    filename = company_file or DEFAULT_COMPANY
+    if filename not in list_companies():
+        return None
+    path = os.path.join(COMPANIES_DIR, filename)
     if os.path.exists(path):
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     return None
 
@@ -93,53 +112,106 @@ def get_demo_inventory() -> list[dict]:
          "qty": 55, "cost": 1.50, "price": 9.99, "daily_avg": 7, "lead_days": 3},
     ]
 
-def daily_summary(transactions: list[dict], days: int = 1, reference_date: str = None) -> dict:
+def inventory_item_summary(item: dict) -> dict:
+    """使用同一库存模型计算单个 SKU 的状态与补货建议。"""
+    status = InventoryStatus(
+        product_name=item.get("name", item.get("sku", "")),
+        current_stock=int(item.get("qty", 0)),
+        daily_sales=float(item.get("daily_avg", 0)),
+        lead_days=int(item.get("lead_days", 3)),
+        safety_days=int(item.get("safety_days", 7)),
+    )
+    return {
+        "turnover_days": status.turnover_days,
+        "safety_stock": status.safety_stock,
+        "reorder_point": status.reorder_point,
+        "reorder_quantity": status.reorder_quantity,
+        "status": status.status,
+    }
+
+
+def daily_summary(
+    transactions: list[dict],
+    days: int = 1,
+    reference_date: str | None = None,
+    inventory: list[dict] | None = None,
+) -> dict:
     """汇总交易数据 — 按天/周/月聚合营收。
 
     Args:
         transactions: 交易记录列表
         days: 统计天数（1=今日/最新交易日, 7=周, 30=月）
-        reference_date: 参考日期；为 None 时自动取最新交易日期（days=1）/当前日期（days>1）
+        reference_date: 参考日期；为 None 时自动取最新交易日期
+        inventory: 库存列表；用于按 SKU/商品名匹配单位成本并计算销售成本
     """
+    if days < 1:
+        raise ValueError("统计天数必须至少为 1")
     if not transactions:
         return {
             "revenue": 0, "orders": 0, "out_qty": 0,
-            "cost": 0, "in_qty": 0, "profit": 0, "margin": 0,
+            "cost": 0, "purchase_spend": 0, "in_qty": 0,
+            "profit": 0, "margin": 0,
         }
-    # "今日" = 最新交易日，非系统日期
-    if days == 1 and reference_date is None:
-        reference_date = max(t["date"] for t in transactions)
+    # 虚拟数据统一以最新交易日为统计锚点，避免历史数据的周/月汇总变成 0。
     if reference_date is None:
-        reference_date = datetime.now().strftime("%Y-%m-%d")
+        reference_date = max(t["date"] for t in transactions)
 
     ref_dt = datetime.strptime(reference_date, "%Y-%m-%d")
     since = (ref_dt - timedelta(days=days - 1)).strftime("%Y-%m-%d")
     filtered = [t for t in transactions if since <= t["date"] <= reference_date]
-    out_total = sum(t["revenue"] for t in filtered if t["type"] == "out")
-    out_qty = sum(t["qty"] for t in filtered if t["type"] == "out")
-    in_total = sum(abs(t["revenue"]) for t in filtered if t["type"] == "in")
-    order_count = len([t for t in filtered if t["type"] == "out"])
+    outbound = [t for t in filtered if t.get("type") == "out"]
+    inbound = [t for t in filtered if t.get("type") == "in"]
+    out_total = sum(float(t.get("revenue", 0)) for t in outbound)
+    out_qty = sum(t.get("qty", 0) for t in outbound)
+    purchase_spend = sum(abs(float(t.get("revenue", 0))) for t in inbound)
+
+    cost_by_sku = {}
+    cost_by_name = {}
+    for item in inventory or []:
+        unit_cost = float(item.get("cost", 0))
+        if item.get("sku"):
+            cost_by_sku[item["sku"]] = unit_cost
+        if item.get("name"):
+            cost_by_name[item["name"]] = unit_cost
+
+    cost_of_goods = 0.0
+    for transaction in outbound:
+        unit_cost = transaction.get("unit_cost", transaction.get("cost"))
+        if unit_cost is None:
+            unit_cost = cost_by_sku.get(
+                transaction.get("sku"),
+                cost_by_name.get(transaction.get("product"), 0),
+            )
+        cost_of_goods += float(transaction.get("qty", 0)) * float(unit_cost)
+
+    profit = out_total - cost_of_goods
     return {
         "revenue": out_total,
-        "orders": order_count,
+        "orders": len(outbound),
         "out_qty": out_qty,
-        "cost": in_total,
-        "in_qty": sum(t["qty"] for t in filtered if t["type"] == "in"),
-        "profit": out_total - in_total,
-        "margin": (out_total - in_total) / out_total if out_total > 0 else 0,
+        "cost": cost_of_goods,
+        "purchase_spend": purchase_spend,
+        "in_qty": sum(t.get("qty", 0) for t in inbound),
+        "profit": profit,
+        "margin": profit / out_total if out_total > 0 else 0,
     }
 
 def inventory_value_summary(inventory: list[dict]) -> dict:
-    total_value = sum(i["qty"] * i["cost"] for i in inventory)
-    total_retail = sum(i["qty"] * i["price"] for i in inventory)
-    total_qty = sum(i["qty"] for i in inventory)
-    low_stock = [i for i in inventory if i["qty"] < i.get("daily_avg",1) * 7]
-    out_of_stock = [i for i in inventory if i["qty"] == 0]
+    total_value = sum(float(i.get("qty", 0)) * float(i.get("cost", 0)) for i in inventory)
+    total_retail = sum(float(i.get("qty", 0)) * float(i.get("price", 0)) for i in inventory)
+    total_qty = sum(int(i.get("qty", 0)) for i in inventory)
+    statuses = [inventory_item_summary(item)["status"] for item in inventory]
+    out_of_stock = statuses.count("断货")
+    low_stock = statuses.count("低库存")
+    reorder_needed = statuses.count("建议补货")
+    normal = statuses.count("正常") + statuses.count("滞销")
     return {
         "total_qty": total_qty,
         "total_value": total_value,
         "total_retail": total_retail,
         "skus": len(inventory),
-        "low_stock": len(low_stock),
-        "out_of_stock": len(out_of_stock),
+        "low_stock": low_stock,
+        "reorder_needed": reorder_needed,
+        "out_of_stock": out_of_stock,
+        "normal": normal,
     }

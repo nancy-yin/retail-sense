@@ -1,0 +1,22 @@
+{
+  "company": "PawStyle Studio（上海）",
+  "company_en": "PawStyle Studio (Shanghai)",
+  "established": "2024-01",
+  "currency": "USD",
+  "inventory": [
+    {"sku":"PS-001","name":"发光项圈","name_en":"LED Collar","qty":30,"cost":5.50,"price":29.99,"daily_avg":5,"lead_days":5},
+    {"sku":"PS-002","name":"宠物领结","name_en":"Pet Bow Tie","qty":80,"cost":1.50,"price":12.99,"daily_avg":8,"lead_days":3},
+    {"sku":"PS-003","name":"宠物手链","name_en":"Pet Bracelet","qty":25,"cost":2.00,"price":14.99,"daily_avg":3,"lead_days":4},
+    {"sku":"PS-004","name":"换牙零食","name_en":"Teething Treats","qty":0,"cost":3.00,"price":11.99,"daily_avg":12,"lead_days":2},
+    {"sku":"PS-005","name":"珐琅名牌","name_en":"Enamel Nameplate","qty":15,"cost":3.20,"price":16.99,"daily_avg":2,"lead_days":4}
+  ],
+  "transactions": [
+    {"date":"2026-08-01","type":"out","sku":"PS-001","product":"发光项圈","qty":6,"revenue":179.94},
+    {"date":"2026-08-01","type":"out","sku":"PS-002","product":"宠物领结","qty":10,"revenue":129.90},
+    {"date":"2026-08-02","type":"out","sku":"PS-003","product":"宠物手链","qty":4,"revenue":59.96},
+    {"date":"2026-08-02","type":"in","sku":"PS-001","product":"发光项圈","qty":20,"revenue":0},
+    {"date":"2026-08-03","type":"out","sku":"PS-002","product":"宠物领结","qty":7,"revenue":90.93},
+    {"date":"2026-08-03","type":"out","sku":"PS-005","product":"珐琅名牌","qty":3,"revenue":50.97},
+    {"date":"2026-08-04","type":"out","sku":"PS-004","product":"换牙零食","qty":15,"revenue":179.85}
+  ]
+}

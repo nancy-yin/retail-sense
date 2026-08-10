@@ -1,7 +1,7 @@
 """
 RetailSense — 虚拟管家 v3.0
 规则引擎 + 数据分析智能体，不依赖外部模型
-支持：真实数据查询、产品匹配、操作建议、思考过程展示、全中英双语
+支持：本地虚拟数据查询、产品匹配、操作建议、思考过程展示、全中英双语
 """
 
 from __future__ import annotations
@@ -342,7 +342,9 @@ class VirtualAgent:
             return self._handle_stock_query(thinking, user_input, inventory, is_en)
 
         elif intent == "revenue_query":
-            return self._handle_revenue_query(thinking, user_input, transactions, is_en)
+            return self._handle_revenue_query(
+                thinking, user_input, transactions, inventory, is_en
+            )
 
         elif intent == "profit_query":
             return self._handle_profit_query(thinking, user_input, transactions, inventory, is_en)
@@ -592,7 +594,8 @@ class VirtualAgent:
         )
 
     def _handle_revenue_query(self, thinking: list, user_input: str,
-                              transactions: list, is_en: bool) -> AgentResponse:
+                              transactions: list, inventory: list,
+                              is_en: bool) -> AgentResponse:
         thinking.append(
             "💰 正在统计营收数据..." if not is_en
             else "💰 Computing revenue..."
@@ -614,7 +617,7 @@ class VirtualAgent:
                   30: ("本月" if not is_en else "This Month")}.get(days, "")
 
         from .dataloader import daily_summary
-        summary = daily_summary(transactions, days)
+        summary = daily_summary(transactions, days, inventory=inventory)
 
         thinking.append(
             f"✅ {label}统计完成：{summary['orders']}单，¥{summary['revenue']:,.2f}"
@@ -670,10 +673,12 @@ class VirtualAgent:
                   30: ("本月" if not is_en else "This Month")}.get(days, "")
 
         # 按产品聚合交易
-        since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        reference_date = max(t["date"] for t in transactions)
+        reference_dt = datetime.strptime(reference_date, "%Y-%m-%d")
+        since = (reference_dt - timedelta(days=days - 1)).strftime("%Y-%m-%d")
         product_profit = {}
         for t in transactions:
-            if t["date"] < since:
+            if not since <= t["date"] <= reference_date:
                 continue
             if t["type"] == "out":
                 pname = t.get("product", "Unknown")

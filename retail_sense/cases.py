@@ -1,8 +1,7 @@
-"""
-RetailSense — 案例库
-"""
+"""RetailSense — 虚拟业务案例库（公司、评价和效果数据均为演示设定）。"""
 CASES = [
     {
+        "is_virtual": True,
         "company": "萌爪宠物用品（杭州）",
         "industry": "宠物饰品跨境电商",
         "problem": "8个SKU手工管理库存，漏单率12%，选品靠老板直觉，年亏$4,200囤货成本",
@@ -15,6 +14,7 @@ CASES = [
         "stage": "选品+库存",
     },
     {
+        "is_virtual": True,
         "company": "PawStyle Studio (上海)",
         "industry": "宠物配饰设计品牌",
         "problem": "定价凭感觉，8个产品利润率从15%到55%参差不齐。发光项圈定价$24.99实际毛利不到30%，低于28%红线。",
@@ -27,6 +27,7 @@ CASES = [
         "stage": "定价",
     },
     {
+        "is_virtual": True,
         "company": "Bark & Co. (加州)",
         "industry": "宠物食品+饰品",
         "problem": "准备在黑五前上新品，但不知道5个候选产品中哪个最强。Etsy/Amazon竞品数据太多，做决策要花一周。",

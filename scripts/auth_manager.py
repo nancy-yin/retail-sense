@@ -3,7 +3,7 @@
 Admin Credential Manager
 ========================
 Manages admin credentials stored in .auth/admin_cred.json.
-Passwords are always SHA-256 hashed — never stored in plaintext.
+Passwords are stored with salted PBKDF2 hashes — never stored in plaintext.
 
 Usage:
   python3 scripts/auth_manager.py verify <password>
@@ -12,7 +12,6 @@ Usage:
   python3 scripts/auth_manager.py show
 """
 
-import hashlib
 import json
 import os
 import sys
@@ -20,6 +19,11 @@ from pathlib import Path
 
 # Resolve project root (parent of scripts/)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from retail_sense.security import hash_password
+from retail_sense.security import verify_password as verify_hash
+
 CRED_FILE = PROJECT_ROOT / ".auth" / "admin_cred.json"
 DESKTOP_FILE = Path(os.path.expanduser("~/Desktop/📊日上/账号密码.json"))
 
@@ -36,10 +40,13 @@ def _save_cred(cred: dict) -> None:
     """Save credentials to JSON. Writes to both .auth/ and Desktop."""
     tmp = CRED_FILE.with_suffix(".tmp")
     CRED_FILE.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(CRED_FILE.parent, 0o700)
     with open(tmp, "w") as f:
         json.dump(cred, f, indent=2)
         f.write("\n")
+    os.chmod(tmp, 0o600)
     os.replace(tmp, CRED_FILE)
+    os.chmod(CRED_FILE, 0o600)
     # Sync to Desktop
     DESKTOP_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(DESKTOP_FILE, "w") as f:
@@ -47,16 +54,16 @@ def _save_cred(cred: dict) -> None:
         f.write("\n")
 
 
-def _hash(password: str) -> str:
-    """Return SHA-256 hex digest of the password."""
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
-
-
 def verify_password(password: str) -> bool:
     """Check whether `password` matches the stored hash."""
     cred = _load_cred()
     stored_hash = cred.get("password_hash", "")
-    return _hash(password) == stored_hash
+    return verify_hash(password, stored_hash)
+
+
+def _validate_new_password(password: str) -> None:
+    if not 8 <= len(password) <= 128:
+        raise ValueError("Password must be 8–128 characters.")
 
 
 def change_password(old_password: str, new_password: str) -> bool:
@@ -66,16 +73,18 @@ def change_password(old_password: str, new_password: str) -> bool:
     """
     if not verify_password(old_password):
         return False
+    _validate_new_password(new_password)
     cred = _load_cred()
-    cred["password_hash"] = _hash(new_password)
+    cred["password_hash"] = hash_password(new_password)
     _save_cred(cred)
     return True
 
 
 def set_password(new_password: str) -> None:
     """Force-set a new password (no old-password check)."""
+    _validate_new_password(new_password)
     cred = _load_cred() if CRED_FILE.exists() else {"username": "admin"}
-    cred["password_hash"] = _hash(new_password)
+    cred["password_hash"] = hash_password(new_password)
     _save_cred(cred)
 
 
@@ -89,7 +98,7 @@ def show_info() -> dict:
 
 def _print_usage():
     script = sys.argv[0] if sys.argv else "auth_manager.py"
-    print(f"Usage:")
+    print("Usage:")
     print(f"  python3 {script} verify <password>")
     print(f"  python3 {script} change-password <old_password> <new_password>")
     print(f"  python3 {script} set-password <new_password>")

@@ -6,7 +6,7 @@ RetailSense — 库存预测
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 @dataclass
@@ -19,6 +19,14 @@ class InventoryStatus:
     safety_days: int = 7       # 安全库存天数
     last_sold: datetime | None = None  # 最后售出日期
 
+    def __post_init__(self):
+        if self.current_stock < 0:
+            raise ValueError("当前库存不能为负数")
+        if self.daily_sales < 0:
+            raise ValueError("日均销量不能为负数")
+        if self.lead_days < 0 or self.safety_days < 0:
+            raise ValueError("进货周期和安全库存天数不能为负数")
+
     @property
     def turnover_days(self) -> float:
         """剩余周转天数"""
@@ -29,7 +37,7 @@ class InventoryStatus:
     @property
     def safety_stock(self) -> int:
         """安全库存量：日均销量 × 安全天数"""
-        return max(1, round(self.daily_sales * self.safety_days))
+        return max(0, round(self.daily_sales * self.safety_days))
 
     @property
     def reorder_point(self) -> int:

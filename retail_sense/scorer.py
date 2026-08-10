@@ -3,8 +3,7 @@ RetailSense — 选品评分引擎
 基于多维数据对候选产品进行综合评分。
 """
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 
 @dataclass
@@ -20,12 +19,13 @@ class ProductScore:
     def __post_init__(self):
         # 加权公式：毛利20% + 竞争度25% + 趋势25% + 复购30%
         # 复购权重最高——来自瑞幸经验：高复购 > 高毛利
-        self.final_score = round(
+        weighted_score = (
             self.margin_score * 0.20 +
             self.competition_score * 0.25 +
             self.trend_score * 0.25 +
-            self.repurchase_score * 0.30, 2
+            self.repurchase_score * 0.30
         )
+        self.final_score = round(max(0, min(100, weighted_score)), 2)
 
 
 class ProductScorer:
@@ -33,6 +33,8 @@ class ProductScorer:
 
     def score_margin(self, cost: float, price: float) -> float:
         """毛利率得分：成本率越低分越高"""
+        if cost < 0:
+            raise ValueError("成本不能为负数")
         if price <= 0:
             return 0
         margin_rate = (price - cost) / price
@@ -46,6 +48,8 @@ class ProductScorer:
 
     def score_competition(self, competitor_count: int) -> float:
         """竞争度得分：竞品越少分越高"""
+        if competitor_count < 0:
+            raise ValueError("竞品数量不能为负数")
         if competitor_count == 0: return 100
         if competitor_count <= 5:  return 90
         if competitor_count <= 10: return 75
@@ -56,7 +60,7 @@ class ProductScorer:
     def score_trend(self, search_growth: float, is_up: bool) -> float:
         """搜索趋势得分：增长率越高越好"""
         if not is_up:
-            return max(0, 50 + search_growth)  # 下降趋势最高50分
+            return max(0, min(50, 50 + search_growth))
         if search_growth >= 50: return 95
         if search_growth >= 30: return 85
         if search_growth >= 15: return 70
@@ -65,6 +69,8 @@ class ProductScorer:
 
     def score_repurchase(self, annual_purchases: float, is_consumable: bool) -> float:
         """复购率得分：年购买次数越多分越高"""
+        if annual_purchases < 0:
+            raise ValueError("年购买次数不能为负数")
         base = 40 if is_consumable else 25
         if annual_purchases >= 6:  return 95
         if annual_purchases >= 4:  return 85

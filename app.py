@@ -1,13 +1,15 @@
 """
-RetailSense v2.4 — AI 零售选品与库存决策系统
+RetailSense v2.5.1 — AI 零售选品与库存决策系统
 """
 import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
+from io import BytesIO
+
+from PIL import Image, UnidentifiedImageError
 from retail_sense.scorer import ProductScorer
 from retail_sense.pricing import CostBreakdown, PricingModel
-from retail_sense.inventory import InventoryStatus
 from retail_sense.copywriter import CopyGenerator
 from retail_sense.intent import IntentEngine
 from retail_sense.sales_script import SalesScriptGenerator
@@ -28,12 +30,24 @@ from retail_sense.data_persistence import (
     load_allocation_log, save_allocation_log,
     load_listing_log, save_listing_log,
 )
+from retail_sense.text_safety import csv_safe, escape_html, safe_filename
+from retail_sense.ui import (
+    UI_THEMES,
+    info_strip,
+    inject_design_system,
+    login_hero,
+    nav_group,
+    page_header,
+    section_label,
+    sidebar_brand,
+)
 
 st.set_page_config(page_title="RetailSense", page_icon="🐾", layout="wide")
 
 # ── 必须最前：初始化状态 ──
 if "font_size" not in st.session_state: st.session_state.font_size = "13px"
 if "lang" not in st.session_state: st.session_state.lang = "zh"
+if "ui_theme" not in st.session_state: st.session_state.ui_theme = UI_THEMES[0]
 
 # ── 宠物温馨风 CSS ──
 fs = int(st.session_state.font_size.replace("px",""))
@@ -181,60 +195,31 @@ h3 {{ font-size: {fs+2}px !important; }}
 </style>
 """, unsafe_allow_html=True)
 
+# Stitch 高保真设计系统（后加载以统一覆盖原生 Streamlit 组件）
+inject_design_system(fs, st.session_state.ui_theme)
+
 # ── 登录系统 ──
 init_session()
 
 if not is_logged_in():
-    # 登录/注册页面 CSS
-    st.markdown(f"""
-    <style>
-    .login-container {{
-        max-width: 440px;
-        margin: 0 auto;
-        padding: 40px 24px;
-        text-align: center;
-    }}
-    .login-header {{
-        font-size: 30px;
-        font-weight: 700;
-        color: #FF8C42;
-        margin-bottom: 2px;
-    }}
-    .login-sub {{
-        font-size: 13px;
-        color: #888;
-        margin-bottom: 28px;
-    }}
-    .login-mascot {{
-        font-size: 56px;
-        margin-bottom: 8px;
-    }}
-    .login-footer-text {{
-        font-size: 11px;
-        color: #aaa;
-        margin-top: 28px;
-        line-height: 1.6;
-    }}
-    </style>
-    """, unsafe_allow_html=True)
-
-    # 在登录页中定义 T / is_en（此时 lang 已初始化）
     _is_en = st.session_state.lang == "en"
     _T = lambda cn, en: en if _is_en else cn
 
-    col1, col2, col3 = st.columns([1, 2.2, 1])
-    with col2:
-        st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    login_visual, login_form = st.columns([1.08, 1])
+    with login_visual:
+        login_hero(_is_en)
 
-        # 萌宠图标
-        st.markdown('<div class="login-mascot">🐾</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="login-header">RetailSense</div>', unsafe_allow_html=True)
+    with login_form:
         st.markdown(
-            f'<div class="login-sub">{_T("AI 零售选品与库存决策系统", "AI Retail Selection & Inventory")}</div>',
+            f"""
+            <div class="rs-login-form-title">
+              <h2>{_T('欢迎回来', 'Welcome Back')}</h2>
+              <p>{_T('登录后继续完成零售决策与运营任务。', 'Sign in to continue your retail decisions and operations.')}</p>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
 
-        # 语言切换
         lang_choice = st.selectbox(
             _T("界面语言", "Language"),
             ["中文", "English"],
@@ -246,28 +231,44 @@ if not is_logged_in():
             st.session_state.lang = new_lang
             st.rerun()
 
-        st.markdown("---")
+        login_theme_labels_en = {
+            "晨雾暖白": "Morning Mist",
+            "奶油珊瑚": "Cream Coral",
+            "薄荷青灰": "Mint Slate",
+        }
+        login_theme_choice = st.selectbox(
+            _T("界面风格", "Visual style"),
+            UI_THEMES,
+            index=UI_THEMES.index(st.session_state.ui_theme),
+            format_func=lambda value: login_theme_labels_en[value] if _is_en else value,
+            key="login_theme_picker",
+        )
+        if login_theme_choice != st.session_state.ui_theme:
+            st.session_state.ui_theme = login_theme_choice
+            st.rerun()
 
-        # ── 登录 / 注册 Tab ──
-        tab_login, tab_register = st.tabs([_T("🔑 登录", "🔑 Login"), _T("📝 注册", "📝 Register")])
+        tab_login, tab_register = st.tabs([_T("登录", "Login"), _T("员工注册", "Staff Register")])
 
         with tab_login:
-            login_user = st.text_input(
-                _T("用户名", "Username"),
-                key="login_user_field",
-                placeholder="admin",
-                label_visibility="visible",
-            )
-            login_pass = st.text_input(
-                _T("密码", "Password"),
-                type="password",
-                key="login_pass_field",
-                placeholder="••••••••",
-                label_visibility="visible",
-            )
-            col_btn1, col_btn2 = st.columns([1.2, 1])
-            with col_btn1:
-                if st.button(_T("🐾 登录", "🐾 Login"), type="primary", use_container_width=True, key="btn_login_main"):
+            show_password = st.checkbox(_T("显示密码", "Show password"), key="show_login_password")
+            with st.form("login_form", clear_on_submit=False):
+                login_user = st.text_input(
+                    _T("用户名", "Username"),
+                    key="login_user_field",
+                    placeholder=_T("请输入用户名", "Enter your username"),
+                )
+                login_pass = st.text_input(
+                    _T("密码", "Password"),
+                    type="default" if show_password else "password",
+                    key="login_pass_field",
+                    placeholder="••••••••",
+                )
+                login_submit = st.form_submit_button(
+                    _T("登录  →", "Sign In  →"),
+                    type="primary",
+                    use_container_width=True,
+                )
+                if login_submit:
                     if not login_user or not login_pass:
                         st.warning(_T("请输入用户名和密码", "Please enter username and password"))
                     else:
@@ -278,27 +279,38 @@ if not is_logged_in():
                         else:
                             st.error(msg)
 
+            st.markdown(
+                f"<div style='text-align:center;margin-top:14px;color:var(--rs-muted);font-size:12px'>"
+                f"{_T('需要账号？请联系管理员', 'Need an account? Contact the administrator')}</div>",
+                unsafe_allow_html=True,
+            )
+
         with tab_register:
-            reg_user = st.text_input(
-                _T("设置用户名", "Choose Username"),
-                key="reg_user_field",
-                placeholder=_T("至少2个字符", "Min 2 characters"),
-            )
-            reg_pass = st.text_input(
-                _T("设置密码", "Choose Password"),
-                type="password",
-                key="reg_pass_field",
-                placeholder=_T("至少6位", "Min 6 characters"),
-            )
-            reg_pass2 = st.text_input(
-                _T("确认密码", "Confirm Password"),
-                type="password",
-                key="reg_pass2_field",
-                placeholder=_T("再次输入密码", "Retype password"),
-            )
-            col_btn1, col_btn2 = st.columns([1.2, 1])
-            with col_btn1:
-                if st.button(_T("📝 注册", "📝 Register"), type="primary", use_container_width=True, key="btn_register_main"):
+            st.caption(_T("用户名支持文字、数字、下划线、点和短横线，共 2–32 个字符。", "Username: 2–32 letters, numbers, underscores, dots or hyphens."))
+            with st.form("register_form", clear_on_submit=False):
+                reg_user = st.text_input(
+                    _T("设置用户名", "Choose Username"),
+                    key="reg_user_field",
+                    placeholder=_T("2–32 个字符", "2–32 characters"),
+                )
+                reg_pass = st.text_input(
+                    _T("设置密码", "Choose Password"),
+                    type="password",
+                    key="reg_pass_field",
+                    placeholder=_T("8–128 位", "8–128 characters"),
+                )
+                reg_pass2 = st.text_input(
+                    _T("确认密码", "Confirm Password"),
+                    type="password",
+                    key="reg_pass2_field",
+                    placeholder=_T("再次输入密码", "Retype password"),
+                )
+                register_submit = st.form_submit_button(
+                    _T("创建员工账号", "Create Staff Account"),
+                    type="primary",
+                    use_container_width=True,
+                )
+                if register_submit:
                     if not reg_user or not reg_pass:
                         st.warning(_T("请填写所有字段", "Please fill all fields"))
                     elif reg_pass != reg_pass2:
@@ -312,11 +324,10 @@ if not is_logged_in():
 
         st.markdown(
             f'<div class="login-footer-text">'
-            f'{_T("RetailSense v2.4 · 宠物温馨风 · 管理员可通过系统预设账号登录", "RetailSense v2.4 · Pet-friendly · Admin login via system preset")}'
+            f'{_T("RetailSense v2.5.1 · 本地演示系统 · 虚拟公司数据", "RetailSense v2.5.1 · Local demo · Virtual company data")}'
             f'</div>',
             unsafe_allow_html=True,
         )
-        st.markdown('</div>', unsafe_allow_html=True)
 
     st.stop()
 
@@ -363,10 +374,11 @@ is_en = st.session_state.lang == "en"
 T = lambda cn, en: en if is_en else cn
 def pname(p): return p.get("name_en" if is_en else "name", p.get("name",""))
 
-VERSION = "v2.4"
+VERSION = "v2.5.1"
 CHANGELOG = """
-**v2.4 (2026-08-06)** 🤖 管家v3.0：真实数据查询+操作建议+思考过程
-**v2.3 (2026-08-04)** 🆕 卡片库存+搜索置顶+真实平台+产品图
+**v2.5.1 (2026-08-10)** 🔒 核心计算精度、安全边界、虚拟案例口径与测试完善
+**v2.4 (2026-08-06)** 🤖 管家v3.0：本地数据查询+操作建议+思考过程
+**v2.3 (2026-08-04)** 🆕 卡片库存+搜索置顶+平台配置+产品图
 **v2.2 (2026-08-04)** 🆕 案例库+引导+更新日志+悬停
 **v2.1 (2026-08-04)** 🤖 多Agent+双语+库存整数化
 **v2.0 (2026-08-04)** 📊 仪表盘+区域分析+虚拟管家
@@ -386,40 +398,62 @@ if not inv and not txns:
 
 # ── 侧边栏 ──
 with st.sidebar:
-    # 🐾 当前用户信息
     user = current_user()
+    safe_user = escape_html(user)
     role = current_role()
     role_badge = "🛡️" if role == "admin" else "👤"
     role_label = "管理员" if role == "admin" else ("普通用户" if role == "user" else "")
     role_label_en = "Admin" if role == "admin" else ("User" if role == "user" else "")
 
+    sidebar_brand(role_label_en if is_en else role_label)
     st.markdown(f"""
-    <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;
-         background:linear-gradient(135deg,#FFF8F0,#FFE8D6);border-radius:8px;
-         margin-bottom:6px;border:1px solid #f0dcc8;">
-        <span style="font-size:22px;">🐾</span>
+    <div style="display:flex;align-items:center;gap:9px;padding:9px 11px;
+         background:rgba(255,255,255,.04);border-radius:8px;
+         margin-bottom:8px;border:1px solid rgba(255,255,255,.08);">
+        <span style="font-size:18px;">{role_badge}</span>
         <div style="flex:1;min-width:0;">
-            <div style="font-weight:700;font-size:13px;color:#5a4a3a;
-                 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{user}</div>
-            <div style="font-size:10px;color:#FF8C42;font-weight:500;">
-                {role_badge} {role_label_en if is_en else role_label}
+            <div style="font-weight:700;font-size:12px;color:var(--rs-text);
+                 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{safe_user}</div>
+            <div style="font-size:9px;color:var(--rs-coral-soft);font-weight:600;letter-spacing:.06em;text-transform:uppercase;">
+                {role_label_en if is_en else role_label}
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # 退出按钮
-    if st.button(T("🚪 退出登录", "🚪 Logout"), use_container_width=True, key="sidebar_logout"):
-        do_logout()
+    nav_group(T("界面风格", "Visual style"))
+    theme_labels_en = {
+        "晨雾暖白": "Morning Mist",
+        "奶油珊瑚": "Cream Coral",
+        "薄荷青灰": "Mint Slate",
+    }
+    theme_choice = st.selectbox(
+        T("选择界面风格", "Choose visual style"),
+        UI_THEMES,
+        index=UI_THEMES.index(st.session_state.ui_theme),
+        format_func=lambda value: theme_labels_en[value] if is_en else value,
+        label_visibility="collapsed",
+        key="sidebar_theme_picker",
+    )
+    if theme_choice != st.session_state.ui_theme:
+        st.session_state.ui_theme = theme_choice
         st.rerun()
 
-    st.divider()
-    st.image(load_image("sidebar"), width='stretch')
-    for name in ["工作台","案例库","选品评分","定价模型","销售自动化","库存监控","商品上架","物流配发","导出报表"]:
-        kind = "primary" if st.session_state.nav == name else "secondary"
-        if st.button(name, width='stretch', type=kind):
-            st.session_state.nav = name; st.rerun()
-    st.divider()
+    nav_sections = [
+        (T("概览", "Overview"), ["工作台", "案例库"]),
+        (T("决策", "Decision"), ["选品评分", "定价模型", "销售自动化"]),
+        (T("执行", "Execution"), ["库存监控", "商品上架", "物流配发"]),
+        (T("数据", "Data"), ["导出报表"]),
+    ]
+    for group_label, items in nav_sections:
+        nav_group(group_label)
+        for name in items:
+            kind = "primary" if st.session_state.nav == name else "secondary"
+            if st.button(name, width="stretch", type=kind, key=f"nav_{name}"):
+                st.session_state.nav = name
+                st.rerun()
+
+    nav_group(T("系统", "System"))
     with st.expander(T("设置","Settings")):
         lang = st.selectbox(T("语言","Language"), ["中文","English"], index=0 if st.session_state.lang=="zh" else 1)
         if (lang == "English" and st.session_state.lang != "en") or (lang == "中文" and st.session_state.lang != "zh"):
@@ -484,10 +518,20 @@ with st.sidebar:
                             label_visibility="collapsed",
                         )
                         if uploaded is not None:
-                            with open(filepath, "wb") as f:
-                                f.write(uploaded.getbuffer())
-                            st.success(T(f"✅ {display_name} 已更新！", f"✅ {display_name} updated!"))
-                            st.rerun()
+                            if uploaded.size > 5 * 1024 * 1024:
+                                st.error(T("图片不能超过 5 MB", "Image must be 5 MB or smaller"))
+                            else:
+                                try:
+                                    image_bytes = uploaded.getvalue()
+                                    with Image.open(BytesIO(image_bytes)) as image:
+                                        image.verify()
+                                    with Image.open(BytesIO(image_bytes)) as image:
+                                        converted = image.convert("RGB")
+                                        converted.save(filepath, "JPEG", quality=90)
+                                    st.success(T(f"✅ {display_name} 已更新！", f"✅ {display_name} updated!"))
+                                    st.rerun()
+                                except (UnidentifiedImageError, OSError, ValueError):
+                                    st.error(T("文件不是有效图片", "The uploaded file is not a valid image"))
 
                         # Reset button to remove custom image
                         if has_custom:
@@ -552,6 +596,9 @@ with st.sidebar:
         st.markdown(T("**RetailSense** 由一位前瑞幸咖啡店长构建。","**RetailSense** built by a former Luckin Coffee store manager."))
     with st.expander(T(f"更新日志 {VERSION}","Changelog {VERSION}")):
         st.markdown(CHANGELOG)
+    if st.button(T("退出登录", "Logout"), use_container_width=True, key="sidebar_logout"):
+        do_logout()
+        st.rerun()
     st.caption(f"{VERSION} · MIT")
 
 page = st.session_state.nav
@@ -562,482 +609,767 @@ if company:
 
 # ══ 工作台 ══
 if page == "工作台":
-    if st.session_state.first_visit:
-        with st.container(border=True):
-            st.markdown(T("### 🐾 欢迎使用 RetailSense！\n**三步开始：**\n1. 📈 选品评分 → 2. 🤖 销售自动化 → 3. 📖 案例库","### 🐾 Welcome!\n**Steps:** 1. Scoring → 2. Pipeline → 3. Cases"))
-            if st.button(T("开始使用","Get Started"), type="primary"): st.session_state.first_visit = False; st.rerun()
+    page_header(
+        "P02 · OVERVIEW",
+        T("工作台", "Dashboard"),
+        T("快速掌握营收、库存风险和下一步运营任务。", "Review revenue, inventory risk and the next operational actions."),
+        T("虚拟公司数据", "Virtual company data"),
+        "purple",
+    )
 
-    # 顶部搜索（管家助手）
-    with st.container(border=True):
-        st.markdown(T(
-            "### 🤖 管家助手 (v3.0) / Assistant (v3.0)",
-            "### 🤖 Assistant (v3.0)"
-        ))
-        col_q, col_btn = st.columns([5, 1])
-        with col_q:
+    today = daily_summary(txns, 1, inventory=inv) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
+    week = daily_summary(txns, 7, inventory=inv) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
+    month = daily_summary(txns, 30, inventory=inv) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
+    inv_summary = inventory_value_summary(inv) if inv else {
+        "total_qty": 0, "total_value": 0, "skus": 0, "low_stock": 0,
+        "reorder_needed": 0, "out_of_stock": 0, "normal": 0, "total_retail": 0,
+    }
+
+    company_name = (
+        company.get("company_en" if is_en else "company", "")
+        if st.session_state.use_company and company
+        else T("内置示例数据", "Built-in demo data")
+    )
+    st.markdown(
+        f"""
+        <div class="rs-welcome-panel">
+          <span class="rs-badge rs-badge--purple">{T("虚拟公司数据", "Virtual company data")}</span>
+          <h2>{T("早上好", "Morning")}, {escape_html(current_user())}</h2>
+          <p>{T("当前数据源", "Current source")}：{escape_html(company_name)} ·
+          {T("库存状态已完成规则检查，请优先处理低库存与断货 SKU。", "Inventory rules are up to date. Prioritize low-stock and out-of-stock SKUs.")}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    quick_a, quick_b, quick_c = st.columns(3)
+    with quick_a:
+        if st.button(T("开始选品  →", "Start scoring  →"), type="primary", use_container_width=True, key="quick_scoring"):
+            st.session_state.nav = "选品评分"
+            st.rerun()
+    with quick_b:
+        if st.button(T("计算定价", "Calculate pricing"), use_container_width=True, key="quick_pricing"):
+            st.session_state.nav = "定价模型"
+            st.rerun()
+    with quick_c:
+        if st.button(T("查看库存", "View inventory"), use_container_width=True, key="quick_inventory"):
+            st.session_state.nav = "库存监控"
+            st.rerun()
+
+    dashboard_col, assistant_col = st.columns([2.35, 1], gap="large")
+    with dashboard_col:
+        section_label(T("关键指标", "Key metrics"))
+        metrics = st.columns(4)
+        metrics[0].metric(T("今日营收", "Today revenue"), f"¥{today['revenue']:,.0f}", f"{today['orders']}{T(' 单', ' orders')}")
+        metrics[1].metric(T("本周营收", "Week revenue"), f"¥{week['revenue']:,.0f}")
+        metrics[2].metric(T("本月营收", "Month revenue"), f"¥{month['revenue']:,.0f}")
+        metrics[3].metric(T("库存零售价值", "Inventory value"), f"¥{inv_summary['total_retail']:,.0f}", f"{inv_summary['skus']} SKU")
+
+        section_label(T("库存健康", "Inventory health"))
+        status_cols = st.columns(3)
+        normal_count = inv_summary["normal"]
+        low_count = inv_summary["low_stock"] + inv_summary["reorder_needed"]
+        status_data = [
+            (T("正常", "Healthy"), normal_count, "ok", "#4ae183"),
+            (T("低库存 / 建议补货", "Low / Reorder"), low_count, "warn", "#ffd166"),
+            (T("断货", "Out of stock"), inv_summary["out_of_stock"], "danger", "#ffb4ab"),
+        ]
+        for idx, (label, count, css_class, color) in enumerate(status_data):
+            with status_cols[idx]:
+                st.markdown(
+                    f"""
+                    <div class="card-hover {css_class}" style="min-height:104px;text-align:left;">
+                      <div style="font:700 28px/1.2 Manrope;color:{color};">{count}</div>
+                      <div style="font:600 10px/1.35 Geist;color:#b8aaad;margin-top:10px;text-transform:uppercase;letter-spacing:.08em;">{label}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        section_label(T("近期出库", "Recent outbound shipments"))
+        out_txns = sorted([t for t in txns if t.get("type") == "out"], key=lambda t: t.get("date", ""), reverse=True)[:5]
+        if out_txns:
+            with st.container(border=True):
+                for txn in out_txns:
+                    row_date, row_product, row_qty, row_revenue = st.columns([1.15, 2.4, .8, 1.1])
+                    row_date.caption(txn.get("date", ""))
+                    row_product.markdown(f"**{escape_html(txn.get('product', ''))}**")
+                    row_qty.caption(f"× {int(txn.get('qty', 0))}")
+                    row_revenue.markdown(f"**¥{float(txn.get('revenue', 0)):,.0f}**")
+        else:
+            info_strip(T("暂无交易记录，关键指标不显示推测趋势。", "No transactions yet; trend claims are hidden."))
+
+    with assistant_col:
+        section_label(T("规则式管家", "Rule-based assistant"))
+        with st.container(border=True):
+            st.markdown(
+                f"### {T('Retail Assistant', 'Retail Assistant')}\n"
+                f"<span class='rs-badge'>{T('规则式助手', 'Rule-based')}</span>",
+                unsafe_allow_html=True,
+            )
+            st.caption(T(
+                "可查询库存、营收、利润和补货建议；回答来自本地规则与演示数据。",
+                "Ask about stock, revenue, profit and restocking. Answers use local rules and demo data.",
+            ))
+
+            preset_questions = [
+                T("查库存", "Check stock"),
+                T("本周营收", "Week revenue"),
+                T("利润最高商品", "Top profit item"),
+                T("补货建议", "Restock advice"),
+            ]
+            preset_cols = st.columns(2)
+            for idx, question in enumerate(preset_questions):
+                with preset_cols[idx % 2]:
+                    if st.button(question, key=f"assistant_preset_{idx}", use_container_width=True):
+                        st.session_state.agent_query = question
+                        st.rerun()
+
             msg = st.text_input(
-                T("💬 向我提问（查库存/营收/利润/补货建议...）",
-                  "💬 Ask me anything (stock/revenue/profit/restock...)"),
-                key="agent_input_top",
-                placeholder=T(
-                    "如：刻字狗牌库存多少 | 本周利润最高产品 | 哪些库存低了 | 建议补货",
-                    "e.g. LED collar stock | most profitable product | low stock alert | restock advice"
-                ),
+                T("向规则式管家提问", "Ask the rule-based assistant"),
+                key="agent_query",
+                placeholder=T("例如：哪些商品需要补货？", "e.g. Which items need restocking?"),
                 label_visibility="collapsed",
             )
-        if msg:
-            with st.spinner(T("🤔 管家思考中...", "🤔 Analyzing...")):
-                resp = agent.process(
-                    msg,
-                    company_data=company,
-                    transactions=txns,
-                    inventory=inv,
-                    lang=st.session_state.lang,
-                )
-            # 存储为结构化数据
-            st.session_state.agent_msg.append(("user", msg))
-            st.session_state.agent_msg.append(("agent_v3", resp))
-        # 渲染消息历史
-        for entry in st.session_state.agent_msg[-6:]:
-            role = entry[0]
-            if role == "user":
-                with st.chat_message("user"):
-                    st.write(entry[1])
-            elif role == "agent_v3":
-                resp_obj = entry[1]
-                with st.chat_message("assistant"):
-                    # 思考过程（可折叠）
-                    if hasattr(resp_obj, 'thinking') and resp_obj.thinking:
-                        with st.expander(
-                            T(f"🧠 思考过程（{len(resp_obj.thinking)}步）",
-                              f"🧠 Thinking ({len(resp_obj.thinking)} steps)"),
-                            expanded=False,
-                        ):
-                            for step in resp_obj.thinking:
-                                st.caption(step)
-                    # 主回答
-                    if hasattr(resp_obj, 'answer'):
-                        st.markdown(resp_obj.answer)
-                    else:
-                        st.write(str(resp_obj))
-                    # 操作建议
-                    if hasattr(resp_obj, 'suggestions') and resp_obj.suggestions:
-                        with st.expander(
-                            T("💡 操作建议", "💡 Suggestions"),
-                            expanded=True,
-                        ):
-                            for s in resp_obj.suggestions:
-                                st.info(s)
-            elif role == "agent":
-                # 兼容旧版纯文本响应
-                with st.chat_message("assistant"):
-                    st.write(entry[1])
+            if st.button(T("发送", "Send"), type="primary", use_container_width=True, key="assistant_send") and msg:
+                with st.spinner(T("正在分析本地数据…", "Analyzing local data…")):
+                    resp = agent.process(
+                        msg,
+                        company_data=company,
+                        transactions=txns,
+                        inventory=inv,
+                        lang=st.session_state.lang,
+                    )
+                st.session_state.agent_msg.append(("user", msg))
+                st.session_state.agent_msg.append(("agent_v3", resp))
 
-    st.title("RetailSense")
-    st.caption(T("AI 零售选品 · 定价 · 库存 · 出入库仪表盘","AI Retail · Pricing · Inventory · Dashboard"))
-
-    if st.session_state.use_company and company:
-        st.success(T(f"已接入：{company['company']}","Connected: "+company['company_en']))
-    elif txns and inv:
-        st.info(T("手动模式 — 使用示例数据","Manual mode — Demo data"))
-    else:
-        st.info(T("手动模式 — 暂无数据","Manual mode — No data"))
-
-    today = daily_summary(txns, 1) if txns else {"revenue":0,"orders":0,"profit":0,"cost":0}
-    week = daily_summary(txns, 7) if txns else {"revenue":0,"orders":0,"profit":0,"cost":0}
-    month = daily_summary(txns, 30) if txns else {"revenue":0,"orders":0,"profit":0,"cost":0}
-    inv_summary = inventory_value_summary(inv) if inv else {"total_qty":0,"total_value":0,"skus":0,"low_stock":0,"out_of_stock":0,"total_retail":0}
-
-    c = st.columns(4)
-    c[0].metric(T("今日营收","Today"), f"¥{today['revenue']:,.0f}", f"{today['orders']}{T('单',' orders')}")
-    c[1].metric(T("本周营收","Week"), f"¥{week['revenue']:,.0f}")
-    c[2].metric(T("本月营收","Month"), f"¥{month['revenue']:,.0f}")
-    c[3].metric(T("库存价值","Inventory"), f"¥{inv_summary['total_retail']:,.0f}", f"{inv_summary['skus']} SKU")
-
-    # 库存卡片悬停（替代柱状图）
-    st.divider()
-    st.subheader(T("库存状态","Inventory Status"))
-    cards = st.columns(3)
-    normal_count = inv_summary['skus'] - inv_summary['low_stock'] - inv_summary['out_of_stock']
-    card_data = [
-        (T("正常","Normal"), normal_count, "ok", "#34a853"),
-        (T("低库存","Low Stock"), inv_summary['low_stock'], "warn", "#f4b400"),
-        (T("断货","Out of Stock"), inv_summary['out_of_stock'], "danger", "#ea4335"),
-    ]
-    for i, (label, count, css_class, color) in enumerate(card_data):
-        with cards[i]:
-            st.markdown(f"""
-            <div class="card-hover {css_class}" style="min-height:80px;">
-                <div style="font-size:26px;font-weight:800;color:{color};">{count}</div>
-                <div style="font-size:12px;color:#888;margin-top:4px;">{label}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-    # 出库趋势（轻量文字+最近3天）
-    st.divider()
-    st.subheader(T("近期出库","Recent Sales"))
-    if txns:
-        out_txns = [t for t in txns if t["type"]=="out"]
-        recent = sorted(out_txns, key=lambda t: t["date"], reverse=True)[:5]
-        out_cols = st.columns(len(recent) if recent else 1)
-        for j, txn in enumerate(recent):
-            with out_cols[j]:
-                st.markdown(f"""<div class="card-hover ok" style="min-height:50px;text-align:center;">
-                    <div style="font-size:11px;color:#888;">{txn['date']}</div>
-                    <div style="font-size:18px;font-weight:700;color:#FF8C42;">¥{txn['revenue']:,.0f}</div>
-                    <div style="font-size:10px;color:#aaa;">{txn.get('product','')}</div></div>""", unsafe_allow_html=True)
-    else:
-        st.caption(T("暂无数据","No data"))
+            for entry in st.session_state.agent_msg[-4:]:
+                if entry[0] == "user":
+                    with st.chat_message("user"):
+                        st.write(entry[1])
+                elif entry[0] == "agent_v3":
+                    resp_obj = entry[1]
+                    with st.chat_message("assistant"):
+                        if hasattr(resp_obj, "answer"):
+                            st.markdown(resp_obj.answer)
+                        else:
+                            st.write(str(resp_obj))
+                        if hasattr(resp_obj, "suggestions") and resp_obj.suggestions:
+                            with st.expander(T("操作建议", "Suggestions"), expanded=False):
+                                for suggestion in resp_obj.suggestions:
+                                    st.caption(f"• {suggestion}")
+                elif entry[0] == "agent":
+                    with st.chat_message("assistant"):
+                        st.write(entry[1])
 
 # ══ 选品评分 ══
 elif page == "选品评分":
-    st.title(T("产品选品评分","Product Scoring"))
+    page_header(
+        "P04 · DECISION",
+        T("选品评分模型 P04", "Product Scoring P04"),
+        T("用毛利、竞争、趋势与复购四维规则解释商品潜力。", "Explain product potential with margin, competition, trend and repurchase rules."),
+        T("规则评分 · 非销量预测", "Rule score · Not a forecast"),
+        "coral",
+    )
 
-    with st.container(border=True):
-        st.markdown(T("**目标市场**","**Target Market**"))
-        if "sel_region" not in st.session_state: st.session_state.sel_region = "北美"
-        regions_list = all_regions()
-        cols = st.columns(len(regions_list))
-        region_colors = {"北美":"#1a73e8","欧洲":"#4285f4","东南亚":"#f4b400","日韩":"#ea4335","澳洲":"#34a853"}
-        for i, (col, rname) in enumerate(zip(cols, regions_list)):
-            with col:
-                rd = get_region(rname)
-                is_sel = st.session_state.sel_region == rname
-                border = f"2px solid {region_colors[rname]}" if is_sel else "1px solid #ddd"
-                bg = f"{region_colors[rname]}15" if is_sel else "#fff"
-                st.markdown(f"""<div style="border:{border};border-radius:4px;padding:8px;text-align:center;background:{bg};min-height:70px;">
-                    <div style="font-weight:600;font-size:12px;">{rname}</div>
-                    <div style="font-size:10px;color:#666;margin-top:2px;">{', '.join(rd['countries'][:3]) if rd else ''}</div>
-                    <div style="font-size:9px;color:#888;margin-top:1px;">{rd['avg_margin'] if rd else ''}</div></div>""", unsafe_allow_html=True)
-                if st.button(T("选择","Select")+rname, key=f"reg_{i}", width='stretch'):
-                    st.session_state.sel_region = rname; st.rerun()
-
-        region = st.session_state.sel_region
-        rd = get_region(region)
-        if rd:
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown(T(f"**主流平台：** {', '.join(rd['platforms'])}","**Platforms:** "+', '.join(rd['platforms'])))
-            with c2:
-                st.markdown(T(f"**竞争：** {rd['competition']} · **利润：** {rd['avg_margin']}","**Competition:** {rd['competition']} · **Margin:** {rd['avg_margin']}"))
-
-        with st.expander(T("近期活动与上品建议","Events & Listing Guide"), expanded=True):
-            for item in upcoming_events(region):
-                if len(item) == 5:
-                    m, e, desc, idx, tip = item
-                    score = int(idx.replace(T("上品指数:","Listing Index:"),""))
-                    color = "#34a853" if score>=90 else ("#f4b400" if score>=80 else "#ea4335")
-                    st.markdown(f"""<div style="border-left:3px solid {color};padding:5px 10px;margin:4px 0;background:#fafafa;border-radius:2px;">
-                        <span style="font-weight:600;font-size:12px;">{m} · {e}</span>
-                        <span style="background:{color};color:white;padding:1px 5px;border-radius:2px;font-size:10px;margin-left:6px;">{idx}</span><br>
-                        <span style="font-size:11px;color:#555;">{desc}</span><br>
-                        <span style="font-size:11px;color:{color};">{tip}</span></div>""", unsafe_allow_html=True)
-
-    with st.expander(T("评分方法论","Methodology"), expanded=False):
-        st.markdown(T("**设计理念**：3年瑞幸200+SKU管理经验 → 真正吃掉利润的是滞销。\n| 维度 | 权重 |\n|------|:---:|\n| 复购 | 30% |\n| 竞争 | 25% |\n| 趋势 | 25% |\n| 毛利 | 20% |",
-                      "**Design**: 3yr Luckin, 200+ SKUs → unsold inventory destroys profit.\n| Dim | Weight |\n|------|:---:|\n| Repur | 30% |\n| Comp | 25% |\n| Trend | 25% |\n| Margin | 20% |"))
-
-    # ── 产品数据（admin 可编辑 / editable by admin）──
     if "products" not in st.session_state:
         st.session_state.products = [
-            {"name":"刻字狗牌","name_en":"Engraved Dog Tag","cost":2.80,"price":12.99,"competitors":35,"search_growth":22,"trend_up":True,"annual_purchases":2,"is_consumable":False,"img":"dog-tag"},
-            {"name":"发光项圈","name_en":"LED Collar","cost":5.50,"price":24.99,"competitors":28,"search_growth":15,"trend_up":True,"annual_purchases":2,"is_consumable":False,"img":"led-collar"},
-            {"name":"珐琅名牌","name_en":"Enamel Nameplate","cost":3.20,"price":16.99,"competitors":18,"search_growth":35,"trend_up":True,"annual_purchases":2,"is_consumable":False,"img":"enamel-plate"},
-            {"name":"牵引绳套装","name_en":"Leash Set","cost":4.50,"price":22.99,"competitors":42,"search_growth":8,"trend_up":True,"annual_purchases":2,"is_consumable":False,"img":"leash-set"},
-            {"name":"宠物领结","name_en":"Pet Bow Tie","cost":1.50,"price":9.99,"competitors":55,"search_growth":-5,"trend_up":False,"annual_purchases":3,"is_consumable":True,"img":"bow-tie"},
-            {"name":"亚克力牌","name_en":"Acrylic Tag","cost":1.20,"price":8.99,"competitors":22,"search_growth":18,"trend_up":True,"annual_purchases":2,"is_consumable":False,"img":"acrylic-tag"},
-            {"name":"宠物手链","name_en":"Pet Bracelet","cost":2.00,"price":14.99,"competitors":15,"search_growth":42,"trend_up":True,"annual_purchases":1,"is_consumable":False,"img":"bracelet"},
-            {"name":"换牙零食","name_en":"Teething Treats","cost":3.00,"price":11.99,"competitors":30,"search_growth":28,"trend_up":True,"annual_purchases":8,"is_consumable":True,"img":"treats"},
+            {"name": "刻字狗牌", "name_en": "Engraved Dog Tag", "cost": 2.80, "price": 12.99, "competitors": 35, "search_growth": 22, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "img": "dog-tag"},
+            {"name": "发光项圈", "name_en": "LED Collar", "cost": 5.50, "price": 24.99, "competitors": 28, "search_growth": 15, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "img": "led-collar"},
+            {"name": "珐琅名牌", "name_en": "Enamel Nameplate", "cost": 3.20, "price": 16.99, "competitors": 18, "search_growth": 35, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "img": "enamel-plate"},
+            {"name": "牵引绳套装", "name_en": "Leash Set", "cost": 4.50, "price": 22.99, "competitors": 42, "search_growth": 8, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "img": "leash-set"},
+            {"name": "宠物领结", "name_en": "Pet Bow Tie", "cost": 1.50, "price": 9.99, "competitors": 55, "search_growth": -5, "trend_up": False, "annual_purchases": 3, "is_consumable": True, "img": "bow-tie"},
+            {"name": "亚克力牌", "name_en": "Acrylic Tag", "cost": 1.20, "price": 8.99, "competitors": 22, "search_growth": 18, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "img": "acrylic-tag"},
+            {"name": "宠物手链", "name_en": "Pet Bracelet", "cost": 2.00, "price": 14.99, "competitors": 15, "search_growth": 42, "trend_up": True, "annual_purchases": 1, "is_consumable": False, "img": "bracelet"},
+            {"name": "换牙零食", "name_en": "Teething Treats", "cost": 3.00, "price": 11.99, "competitors": 30, "search_growth": 28, "trend_up": True, "annual_purchases": 8, "is_consumable": True, "img": "treats"},
         ]
-    PRODUCTS = st.session_state.products
 
+    products = st.session_state.products
     scorer = ProductScorer()
-    for i, p in enumerate(PRODUCTS):
-        label = f"🐾 {pname(p)} — ¥{p['price']:.2f}"
-        with st.expander(label):
-            cimg, c1, c2, c3 = st.columns([0.8, 2, 2, 2])
-            with cimg:
-                b64 = get_img(p.get("img",""))
-                if b64:
-                    st.markdown(f'<img src="data:image/jpeg;base64,{b64}" style="width:70px;height:70px;border-radius:6px;object-fit:cover;">', unsafe_allow_html=True)
-                else:
-                    st.markdown("🐾")
-            with c1:
-                ps = scorer.evaluate(p)
-                # 卡片式评分（替代柱状图）
-                scores = [(T("毛利","M"),ps.margin_score,"#FF8C42"),(T("竞争","C"),ps.competition_score,"#4285f4"),(T("趋势","T"),ps.trend_score,"#34a853"),(T("复购","R"),ps.repurchase_score,"#9b59b6")]
-                for lbl, val, clr in scores:
-                    st.markdown(f"""<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">
-                        <span style="font-size:11px;width:24px;color:#888;">{lbl}</span>
-                        <div style="flex:1;height:6px;background:#eee;border-radius:3px;"><div style="width:{val}%;height:6px;background:{clr};border-radius:3px;"></div></div>
-                        <span style="font-size:11px;font-weight:600;">{val}</span></div>""", unsafe_allow_html=True)
-            with c2:
-                st.markdown(T("**区域推荐**","**Region Recs**"))
-                for r in best_region_for_product(p): st.markdown(f"• {r}")
-                style = st.selectbox(T("风格","Style"), ["seo","social","sales"], key=f"sty_{i}", label_visibility="collapsed")
-                if st.button(T("生成文案","Copy"), key=f"gc_{i}"): st.markdown(CopyGenerator().generate(p, style))
-            with c3:
-                ie = IntentEngine()
-                best = ie.best_angle(p)
-                st.caption(f"**{best['angle']}**: {best['pitch']}")
+    region = st.radio(
+        T("目标市场", "Target market"),
+        all_regions(),
+        horizontal=True,
+        key="sel_region",
+    )
+    region_data = get_region(region)
+    if region_data:
+        info_strip(
+            T("区域关键词：", "Region signals: ")
+            + ", ".join(region_data["countries"][:3])
+            + " · "
+            + T("平均利润：", "Average margin: ")
+            + str(region_data["avg_margin"])
+            + " · "
+            + T("竞争：", "Competition: ")
+            + str(region_data["competition"])
+        )
 
-        # ── 管理员产品编辑 / Admin Product Edit ──
+    scoring_input, scoring_result_col = st.columns([1.15, 1.45], gap="large")
+    with scoring_input:
+        section_label(T("商品与四维输入", "Product and four-factor inputs"))
+        selected_index = st.selectbox(
+            T("选择商品", "Choose product"),
+            range(len(products)),
+            format_func=lambda index: pname(products[index]),
+            key="scoring_product_index",
+        )
+        selected_product = products[selected_index]
+        b64 = get_img(selected_product.get("img", ""))
+        if b64:
+            st.markdown(
+                f'<img alt="{escape_html(pname(selected_product))}" src="data:image/jpeg;base64,{b64}" '
+                f'style="width:100%;max-height:190px;object-fit:contain;border-radius:10px;'
+                f'background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);padding:12px;">',
+                unsafe_allow_html=True,
+            )
+
+        cost_col, price_col = st.columns(2)
+        with cost_col:
+            score_cost = st.number_input(T("成本", "Cost"), min_value=0.0, value=float(selected_product["cost"]), step=0.10, format="%.2f", key=f"score_cost_{selected_index}")
+        with price_col:
+            score_price = st.number_input(T("售价", "Price"), min_value=0.01, value=float(selected_product["price"]), step=0.10, format="%.2f", key=f"score_price_{selected_index}")
+        score_competitors = st.slider(T("竞品数量 · 权重 25%", "Competitors · Weight 25%"), 0, 100, int(selected_product["competitors"]), key=f"score_comp_{selected_index}")
+        score_growth = st.slider(T("搜索增长 · 权重 25%", "Search growth · Weight 25%"), -50, 100, int(selected_product["search_growth"]), key=f"score_growth_{selected_index}")
+        score_annual = st.slider(T("年购买次数 · 权重 30%", "Annual purchases · Weight 30%"), 1, 12, int(selected_product["annual_purchases"]), key=f"score_annual_{selected_index}")
+        score_consumable = st.checkbox(T("消耗品", "Consumable"), value=bool(selected_product["is_consumable"]), key=f"score_consumable_{selected_index}")
+
+        analyzed_product = {
+            **selected_product,
+            "cost": score_cost,
+            "price": score_price,
+            "competitors": score_competitors,
+            "search_growth": score_growth,
+            "trend_up": score_growth >= 0,
+            "annual_purchases": score_annual,
+            "is_consumable": score_consumable,
+        }
+        signature = (
+            selected_index, score_cost, score_price, score_competitors,
+            score_growth, score_annual, score_consumable, region,
+        )
+        if st.button(T("计算综合评分  →", "Calculate score  →"), type="primary", use_container_width=True, key="calculate_scoring"):
+            st.session_state.scoring_result = {
+                "signature": signature,
+                "score": scorer.evaluate(analyzed_product),
+                "product": analyzed_product,
+            }
+
         if is_admin():
-            with st.expander(T("✏️ 编辑产品信息", "✏️ Edit Product"), expanded=False, key=f"edit_prod_{i}"):
-                e_name = st.text_input(T("产品名称", "Product Name"), value=p.get("name",""), key=f"edit_name_{i}")
-                e_name_en = st.text_input(T("英文名称", "English Name"), value=p.get("name_en",""), key=f"edit_name_en_{i}")
-                ec1, ec2 = st.columns(2)
-                with ec1:
-                    e_cost = st.number_input(T("成本 ¥", "Cost ¥"), value=float(p.get("cost",0)), step=0.10, format="%.2f", key=f"edit_cost_{i}")
-                with ec2:
-                    e_price = st.number_input(T("售价 ¥", "Price ¥"), value=float(p.get("price",0)), step=0.10, format="%.2f", key=f"edit_price_{i}")
-                ec3, ec4 = st.columns(2)
-                with ec3:
-                    e_comp = st.number_input(T("竞品数", "Competitors"), value=int(p.get("competitors",0)), step=1, key=f"edit_comp_{i}")
-                with ec4:
-                    e_growth = st.number_input(T("搜索增长 %", "Search Growth %"), value=int(p.get("search_growth",0)), step=1, key=f"edit_growth_{i}")
-                e_annual = st.number_input(T("年均复购次数", "Annual Purchases"), value=int(p.get("annual_purchases",1)), step=1, min_value=1, key=f"edit_annual_{i}")
-                e_consumable = st.checkbox(T("消耗品", "Consumable"), value=p.get("is_consumable",False), key=f"edit_consumable_{i}")
-                if st.button(T("💾 保存修改", "💾 Save Changes"), type="primary", key=f"save_prod_{i}"):
-                    st.session_state.products[i]["name"] = e_name
-                    st.session_state.products[i]["name_en"] = e_name_en
-                    st.session_state.products[i]["cost"] = e_cost
-                    st.session_state.products[i]["price"] = e_price
-                    st.session_state.products[i]["competitors"] = e_comp
-                    st.session_state.products[i]["search_growth"] = e_growth
-                    st.session_state.products[i]["annual_purchases"] = e_annual
-                    st.session_state.products[i]["is_consumable"] = e_consumable
-                    st.success(T("✅ 产品信息已更新！", "✅ Product updated!"))
+            with st.expander(T("管理员：保存为商品默认值", "Admin: save as product defaults"), expanded=False):
+                st.caption(T("仅管理员可修改默认商品数据；普通评分不会覆盖基础数据。", "Only admins can change product defaults; analysis inputs do not overwrite base data."))
+                if st.button(T("保存当前输入", "Save current inputs"), key=f"save_scoring_product_{selected_index}"):
+                    st.session_state.products[selected_index] = analyzed_product
+                    st.success(T("商品默认值已更新。", "Product defaults updated."))
                     st.rerun()
 
-    if st.button(T("批量评分排名","Batch Ranking"), type="primary"):
-        results = scorer.rank(PRODUCTS)
-        rows = []
-        for r in results:
-            rows.append({T("产品","Product"):r.product_name,T("评分","Score"):f"{r.final_score:.0f}",
-                         T("毛利","M"):r.margin_score,T("竞争","C"):r.competition_score,
-                         T("趋势","T"):r.trend_score,T("复购","R"):r.repurchase_score})
-        st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
+    with scoring_result_col:
+        section_label(T("评分结果", "Scoring result"))
+        stored = st.session_state.get("scoring_result")
+        if stored and stored["signature"] != signature:
+            info_strip(T("输入已变化，当前结果待重新计算。", "Inputs changed; recalculate to refresh the result."))
+        if stored:
+            score = stored["score"]
+            score_color = "#4ae183" if score.final_score >= 80 else ("#ffd166" if score.final_score >= 60 else "#ffb4ab")
+            recommendation = T("优先测试", "Priority test") if score.final_score >= 80 else (T("小批验证", "Small-batch test") if score.final_score >= 60 else T("谨慎上架", "Use caution"))
+            st.markdown(
+                f"""
+                <div class="card-hover" style="padding:24px!important;text-align:center;">
+                  <div style="color:#b8aaad;font:600 10px Geist;text-transform:uppercase;letter-spacing:.12em;">{T("综合得分", "Final score")}</div>
+                  <div style="font:800 68px/1 Manrope;color:{score_color};margin:12px 0 4px;">{score.final_score:.0f}</div>
+                  <div style="color:#b8aaad;font-size:12px;">/ 100</div>
+                  <span class="rs-badge" style="margin-top:14px;color:{score_color};">{recommendation}</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            score_dimensions = [
+                (T("毛利", "Margin"), score.margin_score, 20, "#ff7f6e"),
+                (T("竞争", "Competition"), score.competition_score, 25, "#cebdff"),
+                (T("趋势", "Trend"), score.trend_score, 25, "#ffd166"),
+                (T("复购", "Repurchase"), score.repurchase_score, 30, "#4ae183"),
+            ]
+            with st.container(border=True):
+                for label, value, weight, color in score_dimensions:
+                    st.markdown(
+                        f"""
+                        <div style="margin:12px 0;">
+                          <div style="display:flex;justify-content:space-between;font:600 11px Geist;color:var(--rs-text);">
+                            <span>{label} · {weight}%</span><span>{value:.0f}</span>
+                          </div>
+                          <div style="height:7px;background:#353437;border-radius:99px;margin-top:7px;overflow:hidden;">
+                            <div style="width:{max(0, min(100, value))}%;height:100%;background:{color};border-radius:99px;"></div>
+                          </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+            region_recommendations = best_region_for_product(stored["product"])
+            st.caption(T("区域建议：", "Region suggestions: ") + " · ".join(region_recommendations))
+        else:
+            info_strip(T("选择商品并计算后显示综合得分、四维子分和解释。", "Choose a product and calculate to see the final score and four sub-scores."))
+
+    section_label(T("选品模拟排名", "Product simulation ranking"))
+    if st.button(T("生成批量排名", "Generate ranking"), key="batch_scoring"):
+        st.session_state.batch_scoring_results = scorer.rank(products)
+    batch_results = st.session_state.get("batch_scoring_results")
+    if batch_results:
+        ranking_rows = []
+        for rank, result in enumerate(batch_results, 1):
+            ranking_rows.append({
+                T("排名", "Rank"): f"{rank:02d}",
+                T("商品", "Product"): result.product_name,
+                T("综合得分", "Final score"): round(result.final_score),
+                T("毛利", "Margin"): result.margin_score,
+                T("竞争", "Competition"): result.competition_score,
+                T("趋势", "Trend"): result.trend_score,
+                T("复购", "Repurchase"): result.repurchase_score,
+            })
+        st.dataframe(pd.DataFrame(ranking_rows), width="stretch", hide_index=True)
+
+    with st.expander(T("评分方法论与近期活动", "Methodology and upcoming events"), expanded=False):
+        st.markdown(T(
+            "**权重：** 毛利 20% · 竞争 25% · 趋势 25% · 复购 30%。分数用于解释规则，不代表真实销量预测。",
+            "**Weights:** Margin 20% · Competition 25% · Trend 25% · Repurchase 30%. Scores explain rules and are not sales forecasts.",
+        ))
+        for event in upcoming_events(region):
+            if len(event) == 5:
+                month_label, event_name, description, index_label, tip = event
+                st.markdown(f"**{month_label} · {event_name}** · {index_label}  \n{description}  \n{tip}")
 
 # ══ 定价模型 ══
 elif page == "定价模型":
-    st.title(T("定价模型","Pricing Model"))
-    with st.container(border=True):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            raw = st.number_input(T("裸件成本","Raw Material"), value=2.80, step=0.10, format="%.2f")
-            proc = st.number_input(T("加工费","Processing"), value=1.20, step=0.10, format="%.2f")
-        with c2:
-            pack = st.number_input(T("包装费","Packaging"), value=0.50, step=0.10, format="%.2f")
-            ship = st.number_input(T("物流费","Shipping"), value=1.50, step=0.10, format="%.2f")
-        with c3:
-            plat = st.number_input(T("平台费","Platform Fee"), value=0.85, step=0.10, format="%.2f")
-            target = st.slider(T("目标利润率","Target Margin"), 20, 70, 45, 5, format="%d%%")
+    page_header(
+        "P05 · DECISION",
+        T("定价模型", "Pricing Model"),
+        T("拆解完整成本，并按目标利润率给出可解释的售价建议。", "Break down full cost and calculate explainable prices from the target margin."),
+        T("固定演示汇率", "Fixed demo exchange rate"),
+        "green",
+    )
+    info_strip(T("货币换算使用内置演示汇率，不是实时金融数据。", "Currency conversion uses fixed demo rates, not live financial data."))
 
-        st.divider()
-        cc1, cc2 = st.columns(2)
-        with cc1:
-            # 汇率：以 ¥1 为基准
-            RATES = {"¥ CNY":1.0,"$ USD":0.14,"€ EUR":0.13,"£ GBP":0.11,"¥ JPY":16.0,"A$ AUD":0.21,"C$ CAD":0.19}
-            currency = st.selectbox(T("货币单位","Currency"),
-                                   list(RATES.keys()),
-                                   index=1 if is_en else 0)
-            symbol = currency.split()[0]
-            rate = RATES[currency]
-        with cc2:
-            if rate != 1.0:
-                st.caption(T(f"汇率 1{chr(165)}={rate:.2f}{symbol}",f"Rate 1{chr(165)}={rate:.2f}{symbol}"))
-            else:
-                st.caption(T("基准货币 ¥ CNY","Base currency ¥ CNY"))
+    pricing_inputs, pricing_output = st.columns([1.55, 1], gap="large")
+    with pricing_inputs:
+        section_label(T("成本输入", "Cost inputs"))
+        with st.container(border=True):
+            input_a, input_b = st.columns(2)
+            with input_a:
+                raw = st.number_input(T("裸件成本", "Raw material"), min_value=0.0, value=2.80, step=0.10, format="%.2f")
+                proc = st.number_input(T("加工费", "Processing"), min_value=0.0, value=1.20, step=0.10, format="%.2f")
+                pack = st.number_input(T("包装费", "Packaging"), min_value=0.0, value=0.50, step=0.10, format="%.2f")
+            with input_b:
+                ship = st.number_input(T("物流费", "Logistics"), min_value=0.0, value=1.50, step=0.10, format="%.2f")
+                plat = st.number_input(T("平台费金额", "Platform fee"), min_value=0.0, value=0.85, step=0.10, format="%.2f")
+                RATES = {"¥ CNY": 1.0, "$ USD": 0.14, "€ EUR": 0.13, "£ GBP": 0.11, "¥ JPY": 16.0, "A$ AUD": 0.21, "C$ CAD": 0.19}
+                currency = st.selectbox(T("显示货币", "Display currency"), list(RATES), index=1 if is_en else 0)
 
-    if st.button(T("计算定价","Calculate"), type="primary"):
-        cost = CostBreakdown(raw, proc, pack, ship, plat)
-        model = PricingModel()
-        result = model.suggest_price(cost, target/100)
+            target = st.slider(T("目标利润率", "Target margin"), 20, 70, 45, 1, format="%d%%")
+            if st.button(T("计算建议售价  →", "Calculate price  →"), type="primary", use_container_width=True, key="calculate_pricing"):
+                cost = CostBreakdown(raw, proc, pack, ship, plat)
+                result = PricingModel().suggest_price(cost, target / 100)
+                st.session_state.pricing_result = {
+                    **result,
+                    "raw": raw,
+                    "processing": proc,
+                    "packaging": pack,
+                    "shipping": ship,
+                    "platform": plat,
+                    "target": target,
+                    "currency": currency,
+                    "rate": RATES[currency],
+                    "symbol": currency.split()[0],
+                }
 
-        def c(val): return round(val * rate, 2)
+        with st.expander(T("公式与口径说明", "Formula and definitions"), expanded=False):
+            st.markdown(T(
+                "- 总成本 = 裸件 + 加工 + 包装 + 物流 + 平台费\n- 建议售价依据目标利润率反推，并保留两位小数。\n- 28% 为项目内置利润率红线。",
+                "- Total cost = raw + processing + packaging + logistics + platform fee\n- Suggested price is derived from target margin and shown to two decimals.\n- 28% is the built-in project margin redline.",
+            ))
 
-        items = [(T("裸件","Raw"),c(raw)),(T("加工","Proc"),c(proc)),(T("包装","Pack"),c(pack)),(T("物流","Ship"),c(ship)),(T("平台","Plat"),c(plat))]
-        cc = st.columns(5)
-        for i, (lbl, val) in enumerate(items):
-            with cc[i]:
-                st.markdown(f"""<div class="card-hover" style="min-height:50px;">
-                    <div style="font-size:16px;font-weight:700;color:#FF8C42;">{symbol}{val:.2f}</div>
-                    <div style="font-size:10px;color:#888;">{lbl}</div></div>""", unsafe_allow_html=True)
-
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric(T("总成本","Total Cost"), f"{symbol}{c(result['total_cost']):.2f}")
-        m2.metric(T("建议售价","Price"), f"{symbol}{c(result['suggested_price']):.2f}")
-        m3.metric(T("利润","Profit"), f"{symbol}{c(result['profit']):.2f}")
-        m4.metric(T("利润率","Margin"), f"{result['margin_rate']:.1%}",
-                 delta=T("达标","OK") if result['above_redline'] else T("未达标","Low"),
-                 delta_color="normal" if result['above_redline'] else "inverse")
+    with pricing_output:
+        section_label(T("实时计算结果", "Pricing result"))
+        saved_result = st.session_state.get("pricing_result")
+        if saved_result:
+            symbol = saved_result["symbol"]
+            rate = saved_result["rate"]
+            convert = lambda value: round(float(value) * rate, 2)
+            margin_pct = float(saved_result["margin_rate"]) * 100
+            margin_color = "#4ae183" if saved_result["above_redline"] else "#ffb4ab"
+            st.markdown(
+                f"""
+                <div class="card-hover" style="padding:22px!important;">
+                  <div style="font:600 10px/1 Geist;color:#b8aaad;text-transform:uppercase;letter-spacing:.10em;">{T("建议零售价", "Suggested retail price")}</div>
+                  <div style="font:800 42px/1.15 Manrope;color:var(--rs-coral-soft);margin:10px 0 20px;">{symbol}{convert(saved_result['suggested_price']):,.2f}</div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div style="padding:12px;border-radius:8px;background:rgba(255,255,255,.05);">
+                      <div style="color:#b8aaad;font-size:10px;">{T("总成本", "Total cost")}</div>
+                      <strong>{symbol}{convert(saved_result['total_cost']):,.2f}</strong>
+                    </div>
+                    <div style="padding:12px;border-radius:8px;background:rgba(74,225,131,.08);">
+                      <div style="color:#4ae183;font-size:10px;">{T("单件利润", "Unit profit")}</div>
+                      <strong style="color:#4ae183">{symbol}{convert(saved_result['profit']):,.2f}</strong>
+                    </div>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f"""
+                <div class="card-hover" style="margin-top:12px;text-align:center;">
+                  <div style="width:150px;height:150px;margin:6px auto 16px;border-radius:50%;background:conic-gradient(#ff7f6e 0 20%,#cebdff 20% 38%,#ffd166 38% 55%,#4ae183 55% 72%,#353437 72% 100%);display:grid;place-items:center;">
+                    <div style="width:105px;height:105px;border-radius:50%;background:#201f21;display:grid;place-items:center;">
+                      <div><span style="display:block;color:#b8aaad;font-size:10px;">{T("实际利润率", "Actual margin")}</span><strong style="font:700 25px Manrope;color:{margin_color};">{margin_pct:.1f}%</strong></div>
+                    </div>
+                  </div>
+                  <span class="rs-badge {'rs-badge--coral' if not saved_result['above_redline'] else ''}">
+                    {T("达到 28% 利润红线", "Meets 28% redline") if saved_result['above_redline'] else T("未达到 28% 利润红线", "Below 28% redline")}
+                  </span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            component_labels = [
+                (T("裸件", "Raw"), saved_result["raw"]),
+                (T("加工", "Processing"), saved_result["processing"]),
+                (T("包装", "Packaging"), saved_result["packaging"]),
+                (T("物流", "Logistics"), saved_result["shipping"]),
+                (T("平台", "Platform"), saved_result["platform"]),
+            ]
+            with st.expander(T("成本结构", "Cost breakdown"), expanded=True):
+                for label, value in component_labels:
+                    st.markdown(f"**{label}** · {symbol}{convert(value):,.2f}")
+        else:
+            info_strip(T("输入成本并点击“计算建议售价”后显示完整结果。", "Enter costs and calculate to see the full pricing result."))
 
 # ══ 库存监控 ══
 elif page == "库存监控":
-    st.title(T("库存监控","Inventory Monitor"))
-    if st.session_state.use_company and company:
-        st.success(T(f"数据源：{company['company']}","Source: "+company['company_en']))
-    else:
-        st.info(T("手动模式 — 使用示例数据","Manual mode — Demo data"))
+    page_header(
+        "P07 · EXECUTION",
+        T("库存监控", "Inventory Monitor"),
+        T("实时识别断货、低库存和已到补货点的 SKU。", "Identify out-of-stock, low-stock and reorder-point SKUs."),
+        T("虚拟公司数据", "Virtual company data"),
+        "purple",
+    )
+    source_name = (
+        company.get("company_en" if is_en else "company", "")
+        if st.session_state.use_company and company
+        else T("内置示例数据", "Built-in demo data")
+    )
+    info_strip(T("数据源：", "Data source: ") + source_name + " · " + T("状态由安全库存与补货点规则计算。", "Status is calculated from safety-stock and reorder-point rules."))
 
-    # 复用全局已加载的库存数据（公司真实数据或示例数据）
-    # inv is already set at module level from company data or demo fallback
+    prepared_inventory = []
+    for item in inv:
+        summary = inventory_item_summary(item)
+        prepared_inventory.append((item, summary))
+
+    status_order = ["正常", "建议补货", "低库存", "断货"]
+    status_counts = {status: sum(1 for _, summary in prepared_inventory if summary["status"] == status) for status in status_order}
+    status_columns = st.columns(4)
+    status_meta = [
+        ("正常", "Healthy", "#4ae183"),
+        ("建议补货", "Reorder", "#cebdff"),
+        ("低库存", "Low stock", "#ffd166"),
+        ("断货", "Out of stock", "#ffb4ab"),
+    ]
+    for idx, (status_cn, status_en, color) in enumerate(status_meta):
+        with status_columns[idx]:
+            st.metric(T(status_cn, status_en), status_counts[status_cn])
+            if st.button(T("筛选此状态", "Filter"), key=f"filter_inventory_{status_cn}", use_container_width=True):
+                st.session_state.inventory_status_filter = status_cn
+                st.rerun()
+
+    search_col, status_col, sort_col = st.columns([2.1, 1, 1])
+    with search_col:
+        inventory_search = st.text_input(
+            T("搜索商品或 SKU", "Search product or SKU"),
+            key="inventory_search",
+            placeholder=T("输入商品名或 SKU", "Enter product or SKU"),
+        )
+    status_options = [T("全部状态", "All statuses")] + status_order
+    with status_col:
+        selected_status = st.selectbox(
+            T("状态", "Status"),
+            status_options,
+            key="inventory_status_filter",
+        )
+    with sort_col:
+        selected_sort = st.selectbox(
+            T("排序", "Sort"),
+            [T("补货优先级", "Reorder priority"), T("库存量", "Quantity"), T("周转天数", "Turnover days")],
+            key="inventory_sort",
+        )
+
+    filtered_inventory = []
+    for item, summary in prepared_inventory:
+        name = pname(item)
+        haystack = f"{name} {item.get('sku', '')}".lower()
+        if inventory_search and inventory_search.lower() not in haystack:
+            continue
+        if selected_status not in {status_options[0], summary["status"]}:
+            continue
+        filtered_inventory.append((item, summary))
+
+    if selected_sort == T("库存量", "Quantity"):
+        filtered_inventory.sort(key=lambda pair: int(pair[0].get("qty", 0)))
+    elif selected_sort == T("周转天数", "Turnover days"):
+        filtered_inventory.sort(key=lambda pair: float(pair[1]["turnover_days"]))
+    else:
+        priority = {"断货": 0, "低库存": 1, "建议补货": 2, "正常": 3}
+        filtered_inventory.sort(key=lambda pair: (priority.get(pair[1]["status"], 9), int(pair[0].get("qty", 0))))
 
     rows = []
-    for i in inv:
-        qty = int(i.get("qty", 0))
-        daily = int(i.get("daily_avg", 1))
-        lead = i.get("lead_days", 3)
-        safety = max(1, round(daily * 7))
-        reorder_qty = max(round(daily), safety + round(daily * lead) - qty) if qty < safety else 0
-        status_cn = "断货" if qty == 0 else ("低库存" if qty < safety else "正常")
-        status_en = "OOS" if qty == 0 else ("Low" if qty < safety else "Normal")
-        status_color = "#ea4335" if qty == 0 else ("#f4b400" if qty < safety else "#34a853")
-
+    status_en_map = {"断货": "Out of stock", "低库存": "Low stock", "建议补货": "Reorder", "正常": "Healthy"}
+    for item, summary in filtered_inventory:
+        daily = float(item.get("daily_avg", 0))
+        turnover = T("暂不能计算", "Not available") if daily <= 0 else f"{summary['turnover_days']:.1f} {T('天', 'days')}"
         rows.append({
-            T("产品","Product"): pname(i),
-            "SKU": i.get("sku",""),
-            T("库存","Qty"): qty,
-            T("日均","Daily"): daily,
-            T("安全库存","Safety"): safety,
-            T("补货","Reorder"): reorder_qty,
-            T("状态","Status"): status_en if is_en else status_cn,
+            T("商品", "Product"): pname(item),
+            "SKU": item.get("sku", ""),
+            T("当前库存", "Quantity"): int(item.get("qty", 0)),
+            T("日均销量", "Daily sales"): daily,
+            T("周转天数", "Turnover"): turnover,
+            T("安全库存", "Safety stock"): summary["safety_stock"],
+            T("补货点", "Reorder point"): summary["reorder_point"],
+            T("建议补货量", "Suggested qty"): summary["reorder_quantity"],
+            T("状态", "Status"): status_en_map.get(summary["status"], summary["status"]) if is_en else summary["status"],
         })
 
-    st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
+    section_label(T("库存明细", "Inventory details"))
+    if rows:
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        st.caption(T(f"共 {len(rows)} 条结果；四个状态互斥。", f"{len(rows)} results; inventory statuses are mutually exclusive."))
+    else:
+        info_strip(T("当前筛选条件下没有库存记录。请清除搜索或状态筛选。", "No inventory matches the current filters. Clear the search or status filter."))
+        if st.button(T("清除筛选", "Clear filters"), type="primary", key="clear_inventory_filters"):
+            st.session_state.inventory_search = ""
+            st.session_state.inventory_status_filter = status_options[0]
+            st.rerun()
 
-    # 库存卡片（替代柱状图）
-    st.divider()
-    st.subheader(T("库存概览","Overview"))
-    inv_cards = st.columns(min(len(inv), 5))
-    for idx, item in enumerate(inv[:5]):
-        with inv_cards[idx]:
-            qty = item.get("qty",0)
-            status = "ok" if qty>20 else ("warn" if qty>0 else "danger")
-            b64 = get_img(item.get("img",""))
-            if b64:
-                st.markdown(f'<img src="data:image/jpeg;base64,{b64}" style="width:50px;height:50px;border-radius:4px;object-fit:cover;margin-bottom:4px;">', unsafe_allow_html=True)
-            st.markdown(f"""<div class="card-hover {status}" style="min-height:50px;">
-                <div style="font-size:22px;font-weight:800;">{qty}</div>
-                <div style="font-size:11px;color:#888;">{pname(item)}</div></div>""", unsafe_allow_html=True)
+    with st.expander(T("状态公式与口径", "Status formulas and definitions"), expanded=False):
+        st.markdown(T(
+            "- 安全库存 = 日均销量 × 7 天\n- 补货点 = 安全库存 + 日均销量 × 交期\n- 建议补货量 = max(0, 补货点 − 当前库存)\n- 日均销量为 0 时不计算周转，避免除零。",
+            "- Safety stock = daily sales × 7 days\n- Reorder point = safety stock + daily sales × lead time\n- Suggested quantity = max(0, reorder point − quantity)\n- Turnover is not calculated when daily sales is zero.",
+        ))
 
 # ══ 案例库 ══
 elif page == "案例库":
-    st.title(T("案例库","Case Studies"))
-    st.caption(T("真实商家如何用 RetailSense 降本增效","How real businesses save with RetailSense"))
+    page_header(
+        "P03 · OVERVIEW",
+        T("案例库", "Case Library"),
+        T("用虚拟业务故事说明 RetailSense 的分析与执行能力。", "Virtual business stories that demonstrate RetailSense analysis and execution."),
+        T("全部为虚拟演示案例", "All cases are fictional demos"),
+        "coral",
+    )
+    info_strip(T("案例公司、指标、评价和交易数据均为虚拟演示内容。", "Companies, metrics, feedback and transactions are fictional demo content."))
+
     cases = get_cases()
-    for i, case in enumerate(cases):
-        with st.container(border=True):
-            c1, c2 = st.columns([2,1])
-            with c1:
-                st.markdown(f"### {case['company']}")
-                st.caption(f"{case['industry']} · {case['region']} · {T('环节：'+case['stage'],'Stage: '+case['stage'])}")
-                with st.expander(T("痛点","Problem"), expanded=(i==0)):
-                    st.markdown(f"**{T('使用前','Before')}:** {case['problem']}\n\n**{T('解决方案','Solution')}:** {case['solution']}")
-                with st.expander(T("效果对比","Results")):
-                    b = case['before']; a = case['after']
-                    mc = st.columns(4)
-                    mc[0].metric(T("耗时","Time"), a['time'], delta=f"↓ {b['time']}", delta_color="inverse")
-                    mc[1].metric(T("成本","Cost"), a['cost'], delta=f"↓ {b['cost']}", delta_color="normal")
-                    mc[2].metric(T("人力","People"), a['people'], delta=f"↓ {b['people']}", delta_color="inverse")
-                    mc[3].metric(T("错误率","Errors"), a['error'], delta=f"↓ {b['error']}", delta_color="normal")
-                st.markdown(f"> *{case['testimonial']}*")
-            with c2:
-                st.markdown(T("**使用产品**","**Products**"))
-                for p in case['products_used']: st.markdown(f"• {p}")
-                st.divider()
-                st.markdown(T("**适用功能**","**Features**"))
-                st.markdown(T(f"• {case['stage']}",f"• {case['stage']}"))
+    filter_region, filter_stage, filter_industry = st.columns(3)
+    region_options = [T("全部地区", "All regions")] + sorted({case["region"] for case in cases})
+    stage_options = [T("全部阶段", "All stages")] + sorted({case["stage"] for case in cases})
+    industry_options = [T("全部行业", "All industries")] + sorted({case["industry"] for case in cases})
+    with filter_region:
+        selected_region = st.selectbox(T("地区", "Region"), region_options, key="case_region")
+    with filter_stage:
+        selected_stage = st.selectbox(T("业务阶段", "Business stage"), stage_options, key="case_stage")
+    with filter_industry:
+        selected_industry = st.selectbox(T("行业", "Industry"), industry_options, key="case_industry")
+
+    all_region = region_options[0]
+    all_stage = stage_options[0]
+    all_industry = industry_options[0]
+    filtered_cases = [
+        case for case in cases
+        if (selected_region == all_region or case["region"] == selected_region)
+        and (selected_stage == all_stage or case["stage"] == selected_stage)
+        and (selected_industry == all_industry or case["industry"] == selected_industry)
+    ]
+    st.caption(T(f"显示 {len(filtered_cases)} 个虚拟案例", f"Showing {len(filtered_cases)} fictional cases"))
+
+    case_images = ["images/banner.jpg", "images/sidebar.jpg", "images/footer.jpg"]
+    if not filtered_cases:
+        info_strip(T("当前筛选条件下没有案例，请清除筛选后重试。", "No cases match these filters. Clear the filters and try again."))
+        if st.button(T("清除筛选", "Clear filters"), type="primary", key="clear_case_filters"):
+            st.session_state.case_region = all_region
+            st.session_state.case_stage = all_stage
+            st.session_state.case_industry = all_industry
+            st.rerun()
+    else:
+        card_columns = st.columns(min(3, len(filtered_cases)), gap="medium")
+        for index, case in enumerate(filtered_cases):
+            original_index = cases.index(case)
+            with card_columns[index % len(card_columns)]:
+                with st.container(border=True):
+                    st.image(case_images[original_index % len(case_images)], use_container_width=True)
+                    st.markdown(
+                        f"<span class='rs-badge rs-badge--coral'>{T('虚拟案例', 'Fictional case')}</span>",
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown(f"### {escape_html(case['company'])}")
+                    st.caption(f"{escape_html(case['industry'])} · {escape_html(case['region'])} · {escape_html(case['stage'])}")
+                    st.markdown(f"**{T('痛点', 'Problem')}**")
+                    st.write(case["problem"])
+                    st.caption(T("使用功能：", "Features: ") + "、".join(case["products_used"]))
+                    with st.expander(T("查看详情  →", "View details  →"), expanded=False):
+                        st.markdown(f"**{T('使用前', 'Before')}**")
+                        st.write(case["problem"])
+                        st.markdown(f"**{T('解决方案', 'Solution')}**")
+                        st.write(case["solution"])
+                        metric_cols = st.columns(2)
+                        metric_cols[0].metric(T("耗时", "Time"), case["after"]["time"], delta=f"↓ {case['before']['time']}", delta_color="inverse")
+                        metric_cols[1].metric(T("成本", "Cost"), case["after"]["cost"], delta=f"↓ {case['before']['cost']}")
+                        metric_cols[0].metric(T("人力", "People"), case["after"]["people"], delta=f"↓ {case['before']['people']}", delta_color="inverse")
+                        metric_cols[1].metric(T("错误率", "Errors"), case["after"]["error"], delta=f"↓ {case['before']['error']}")
+                        st.markdown(T("**虚拟反馈（演示文案）**", "**Fictional feedback (demo copy)**"))
+                        st.markdown(
+                            f'<div class="rs-case-feedback">“{escape_html(case["testimonial"])}”</div>',
+                            unsafe_allow_html=True,
+                        )
 
 # ══ 销售自动化 ══
 elif page == "销售自动化":
-    st.title(T("多智能体销售自动化","Multi-Agent Sales Pipeline"))
-    st.caption(T("Scout选品→Price定价→Copy文案→Monitor监控","Scout→Price→Copy→Monitor Pipeline"))
+    page_header(
+        "P06 · DECISION",
+        T("销售自动化", "Sales Automation"),
+        T("Scout、Price、Copy、Monitor 四段规则流水线的可追踪执行。", "Track the Scout, Price, Copy and Monitor rule pipeline."),
+        T("规则引擎 · 非自治 Agent", "Rule engine · Not autonomous agents"),
+        "purple",
+    )
+    info_strip(T("当前四阶段均由本地规则与模板执行，不调用大模型。", "All four stages currently use local rules and templates; no LLM is called."))
 
-    with st.expander(T("操作指引","How it works"), expanded=False):
-        st.markdown(T("1. Scout选品 → 2. Price定价 → 3. Copy文案 → 4. Monitor监控\n调整利润率→选市场→启动全流程","1. Scout → 2. Price → 3. Copy → 4. Monitor\nAdjust margin→Pick market→Start pipeline"))
-
-    PRODUCTS_A = [
-        {"name":"刻字狗牌","name_en":"Engraved Dog Tag","cost":2.80,"price":12.99,"competitors":35,"search_growth":22,"trend_up":True,"annual_purchases":2,"is_consumable":False,"qty":45,"daily_avg":9,"img":"dog-tag"},
-        {"name":"发光项圈","name_en":"LED Collar","cost":5.50,"price":24.99,"competitors":28,"search_growth":15,"trend_up":True,"annual_purchases":2,"is_consumable":False,"qty":12,"daily_avg":6,"img":"led-collar"},
-        {"name":"珐琅名牌","name_en":"Enamel Nameplate","cost":3.20,"price":16.99,"competitors":18,"search_growth":35,"trend_up":True,"annual_purchases":2,"is_consumable":False,"qty":120,"daily_avg":3,"img":"enamel-plate"},
-        {"name":"牵引绳套装","name_en":"Leash Set","cost":4.50,"price":22.99,"competitors":42,"search_growth":8,"trend_up":True,"annual_purchases":2,"is_consumable":False,"qty":0,"daily_avg":4,"img":"leash-set"},
-        {"name":"换牙零食","name_en":"Teething Treats","cost":3.00,"price":11.99,"competitors":30,"search_growth":28,"trend_up":True,"annual_purchases":8,"is_consumable":True,"qty":8,"daily_avg":15,"img":"treats"},
+    products_for_pipeline = [
+        {"name": "刻字狗牌", "name_en": "Engraved Dog Tag", "cost": 2.80, "price": 12.99, "competitors": 35, "search_growth": 22, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "qty": 45, "daily_avg": 9, "img": "dog-tag"},
+        {"name": "发光项圈", "name_en": "LED Collar", "cost": 5.50, "price": 24.99, "competitors": 28, "search_growth": 15, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "qty": 12, "daily_avg": 6, "img": "led-collar"},
+        {"name": "珐琅名牌", "name_en": "Enamel Nameplate", "cost": 3.20, "price": 16.99, "competitors": 18, "search_growth": 35, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "qty": 120, "daily_avg": 3, "img": "enamel-plate"},
+        {"name": "牵引绳套装", "name_en": "Leash Set", "cost": 4.50, "price": 22.99, "competitors": 42, "search_growth": 8, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "qty": 0, "daily_avg": 4, "img": "leash-set"},
+        {"name": "换牙零食", "name_en": "Teething Treats", "cost": 3.00, "price": 11.99, "competitors": 30, "search_growth": 28, "trend_up": True, "annual_purchases": 8, "is_consumable": True, "qty": 8, "daily_avg": 15, "img": "treats"},
     ]
 
     with st.container(border=True):
-        c1, c2 = st.columns(2)
-        with c1:
-            target_pct = st.slider(T("目标利润率","Target Margin"), 25, 60, 45, 5, format="%d%%")
-        with c2:
-            region = st.selectbox(T("目标市场","Target Market"), ["北美","欧洲","东南亚","日韩","澳洲"])
-        st.caption(T(f"{len(PRODUCTS_A)}SKU | 利润目标{target_pct}%",f"{len(PRODUCTS_A)} SKUs | {target_pct}% target"))
+        parameter_a, parameter_b, parameter_c = st.columns([1, 1, .7])
+        with parameter_a:
+            target_pct = st.slider(T("目标利润率", "Target margin"), 25, 60, 45, 5, format="%d%%", key="pipeline_margin")
+        with parameter_b:
+            pipeline_region = st.selectbox(T("目标市场", "Target market"), ["北美", "欧洲", "东南亚", "日韩", "澳洲"], key="pipeline_region")
+        with parameter_c:
+            st.metric(T("处理商品", "Products"), len(products_for_pipeline))
 
-    st.markdown(T("**流水线**","**Pipeline**"))
+    section_label(T("执行流", "Execution flow"))
+    pipeline_state = st.session_state.get("pipeline_state")
     steps = st.columns(4)
-    for i, (icon, lcn, len_, hcn, hen) in enumerate([
-        ("🔍","选品侦察","Scout","评分排序","Scoring"),
-        ("💰","智能定价","Price","成本+利润","Cost+sim"),
-        ("✍️","文案生成","Copy","SEO+社交","SEO+sales"),
-        ("📊","库存监控","Monitor","巡检+趋势","Alert+trend"),
-    ]):
-        with steps[i]:
-            st.markdown(f"""<div style="border:1px solid #e0e0e0;border-radius:4px;padding:8px;text-align:center;min-height:75px;">
-                <div style="font-size:16px;">{icon}</div><div style="font-weight:600;font-size:11px;">{T(lcn,len_)}</div>
-                <div style="font-size:10px;color:#888;">{T(hcn,hen)}</div>
-                <span style="background:#e8f5e9;color:#2e7d32;padding:1px 6px;border-radius:2px;font-size:9px;">{T('Agent','Agent')}</span></div>""", unsafe_allow_html=True)
+    stage_definitions = [
+        ("travel_explore", "Scout", T("评分排序", "Scoring")),
+        ("sell", "Price", T("Top 5 定价", "Top 5 pricing")),
+        ("edit_note", "Copy", T("SEO / 社交 / 话术", "SEO / social / sales")),
+        ("visibility", "Monitor", T("库存与利润异常", "Stock and margin alerts")),
+    ]
+    for index, (icon, name, description) in enumerate(stage_definitions):
+        complete = pipeline_state is not None
+        border_color = "#4ae183" if complete else "rgba(255,255,255,.12)"
+        status_text = T("完成", "Complete") if complete else T("待执行", "Ready")
+        with steps[index]:
+            st.markdown(
+                f"""
+                <div class="card-hover" style="min-height:132px;text-align:center;border-color:{border_color}!important;">
+                  <span class="material-symbols-outlined" style="font-size:26px;color:{'#4ae183' if complete else '#b8aaad'};">{icon}</span>
+                  <div style="font:700 14px Manrope;margin:10px 0 4px;">{name}</div>
+                  <div style="color:#b8aaad;font-size:11px;">{description}</div>
+                  <div style="margin-top:11px;color:{'#4ae183' if complete else '#b8aaad'};font:600 9px Geist;text-transform:uppercase;letter-spacing:.10em;">{status_text}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-    with st.expander(T("Agent 架构","Agent Architecture"), expanded=False):
-        st.caption(T("Scout→Price→Copy→Monitor 四Agent串联 | 当前: 规则引擎 | 完整模式: LLM API",
-                     "Scout→Price→Copy→Monitor | Current: rule engine | Full: LLM API"))
+    if st.button(T("启动全流程  →", "Start pipeline  →"), type="primary", use_container_width=True, key="start_pipeline"):
+        with st.status(T("正在执行四阶段规则流水线…", "Running the four-stage rule pipeline…"), expanded=True) as status:
+            st.write(T("Scout：计算四维评分并排序", "Scout: scoring and ranking"))
+            state = SalesPipeline().run(products_for_pipeline, target_pct / 100, pipeline_region)
+            st.write(T("Price：按利润目标完成定价", "Price: calculating target-margin prices"))
+            st.write(T("Copy：生成 SEO、社交与销售话术模板", "Copy: generating SEO, social and sales templates"))
+            st.write(T("Monitor：检查库存与利润异常", "Monitor: checking stock and margin alerts"))
+            st.session_state.pipeline_state = state
+            st.session_state.pipeline_run_meta = {
+                "target_pct": target_pct,
+                "region": pipeline_region,
+                "products": len(products_for_pipeline),
+                "finished_at": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            status.update(label=T("规则流水线执行完成", "Rule pipeline complete"), state="complete", expanded=False)
+        st.rerun()
 
-    if st.button(T("启动全流程","Start Pipeline"), type="primary", width='stretch'):
-        pipeline = SalesPipeline()
-        with st.spinner(T("执行中...","Running...")):
-            state = pipeline.run(PRODUCTS_A, target_pct/100, region)
-        st.success(T("完成！","Complete!"))
-        t1,t2,t3,t4 = st.tabs([T("评分","Scoring"),T("定价","Pricing"),T("文案","Copy"),T("监控","Monitor")])
-        with t1:
-            if state.scored:
-                sd = pd.DataFrame([{T("产品","Product"):r.product_name,T("评分","Score"):f"{r.final_score:.0f}",
-                                    T("毛利","Margin"):r.margin_score,T("竞争","Comp"):r.competition_score,
-                                    T("趋势","Trend"):r.trend_score,T("复购","Repur"):r.repurchase_score} for r in state.scored])
-                st.dataframe(sd, width='stretch', hide_index=True)
-        with t2:
-            if state.priced:
-                pd_data = pd.DataFrame(state.priced)
-                pd_data_display = pd_data.rename(columns={"name":T("产品","Product"),"suggested_price":T("售价","Price"),
-                    "profit":T("利润","Profit"),"margin":T("利润率","Margin"),"above_redline":T("达标","Pass")})
-                st.dataframe(pd_data_display, width='stretch', hide_index=True)
-                ok = sum(1 for p in state.priced if p["above_redline"])
-                st.metric(T("达标率","Pass"), f"{ok}/{len(state.priced)}",
-                         delta=T("全部达标" if ok==len(state.priced) else f"{len(state.priced)-ok}个未达标","All" if ok==len(state.priced) else f"{len(state.priced)-ok} below"))
-        with t3:
-            if state.copy:
-                for c in state.copy:
-                    with st.expander(f"📝 {c['name']}"):
-                        st.markdown(f"**SEO 文案**\n{c['seo']}")
-                        st.divider()
-                        st.markdown(f"**{T('社交种草','Social')}**\n{c['social']}")
-                        st.divider()
-                        st.markdown(f"**{T('销售转化','Sales Script')}**\n{c['script'].get('开场','')}")
-        with t4:
-            if state.monitor:
-                for m in state.monitor:
-                    with st.container(border=True):
-                        has_urgent = any("断货" in i for i in m["issues"])
-                        (st.error if has_urgent else st.warning)(f"**{m['name']}**: {'; '.join(m['issues'])}")
+    pipeline_state = st.session_state.get("pipeline_state")
+    if pipeline_state:
+        st.progress(1.0, text=T("四个阶段均已完成", "All four stages complete"))
+        result_score, result_price, result_copy, result_monitor = st.tabs([
+            T("Scout 评分", "Scout scores"),
+            T("Price 定价", "Price pricing"),
+            T("Copy 文案", "Copy content"),
+            T("Monitor 监控", "Monitor alerts"),
+        ])
+        with result_score:
+            if pipeline_state.scored:
+                score_rows = [{
+                    T("商品", "Product"): result.product_name,
+                    T("综合得分", "Final score"): round(result.final_score),
+                    T("毛利", "Margin"): result.margin_score,
+                    T("竞争", "Competition"): result.competition_score,
+                    T("趋势", "Trend"): result.trend_score,
+                    T("复购", "Repurchase"): result.repurchase_score,
+                } for result in pipeline_state.scored]
+                st.dataframe(pd.DataFrame(score_rows), width="stretch", hide_index=True)
+        with result_price:
+            if pipeline_state.priced:
+                price_rows = pd.DataFrame(pipeline_state.priced).rename(columns={
+                    "name": T("商品", "Product"),
+                    "suggested_price": T("建议售价", "Suggested price"),
+                    "profit": T("利润", "Profit"),
+                    "margin": T("利润率", "Margin"),
+                    "above_redline": T("达到红线", "Meets redline"),
+                })
+                st.dataframe(price_rows, width="stretch", hide_index=True)
+        with result_copy:
+            for generated in pipeline_state.copy or []:
+                with st.expander(f"{generated['name']} · SEO / Social / Sales", expanded=False):
+                    st.markdown(f"**SEO**  \n{generated['seo']}")
+                    st.markdown(f"**{T('社交内容', 'Social')}**  \n{generated['social']}")
+                    st.markdown(f"**{T('销售话术', 'Sales script')}**  \n{generated['script'].get('开场', '')}")
+        with result_monitor:
+            if pipeline_state.monitor:
+                for monitor_item in pipeline_state.monitor:
+                    has_urgent = any("断货" in issue for issue in monitor_item["issues"])
+                    (st.error if has_urgent else st.warning)(f"**{monitor_item['name']}** · {'; '.join(monitor_item['issues'])}")
             else:
-                st.success(T("所有产品正常","All products normal"))
+                st.success(T("所有商品均未触发库存或利润异常。", "No stock or margin alerts were triggered."))
+
+        run_meta = st.session_state.get("pipeline_run_meta", {})
+        with st.expander(T("运行摘要与日志", "Run summary and logs"), expanded=False):
+            st.json(run_meta)
+    else:
+        info_strip(T(f"准备处理 {len(products_for_pipeline)} 个商品。启动后将依次执行四个规则阶段。", f"Ready to process {len(products_for_pipeline)} products through four rule stages."))
 
 # ══ 物流配发 ══
 elif page == "物流配发":
-    if not require_user():
+    if is_admin():
+        page_header(
+            "P09 · EXECUTION",
+            T("物流配发", "Logistics & Fulfillment"),
+            T("该页面的配货与虚拟发货操作由员工角色执行。", "Allocation and simulated shipping are performed by the staff role."),
+            T("当前角色：管理员", "Current role: Admin"),
+            "coral",
+        )
+        info_strip(T("管理员可以查看功能范围，但不能执行配货或虚拟发货。请切换员工账号。", "Admins can review the scope but cannot allocate or simulate shipping. Switch to a staff account."))
+        if st.button(T("返回工作台", "Back to dashboard"), type="primary", key="logistics_back_dashboard"):
+            st.session_state.nav = "工作台"
+            st.rerun()
         st.stop()
 
-    st.title(T("物流配发","Logistics & Fulfillment"))
-    st.caption(T("订单看板 · 智能配货 · 虚拟快递追踪","Order Board · Smart Allocation · Virtual Delivery Tracking"))
+    page_header(
+        "P09 · EXECUTION",
+        T("物流配发", "Logistics & Fulfillment"),
+        T("查看虚拟订单、完成配货并追踪六阶段模拟物流。", "Allocate virtual orders and follow the six-stage simulated delivery flow."),
+        T("虚拟订单 · 模拟物流", "Virtual orders · Simulated logistics"),
+        "green",
+    )
 
     orders = get_mock_orders()
     warehouse = get_warehouse_inventory()
@@ -1612,11 +1944,27 @@ requests.post(WEBHOOK_URL, data=body, headers={{
 
 # ══ 商品上架 ══
 elif page == "商品上架":
-    if not require_user():
+    if is_admin():
+        page_header(
+            "P08 · EXECUTION",
+            T("商品上架", "Product Listing"),
+            T("该页面的模拟上架操作由员工角色执行。", "Simulated listing is performed by the staff role."),
+            T("当前角色：管理员", "Current role: Admin"),
+            "coral",
+        )
+        info_strip(T("管理员可以管理商品和平台配置，但不能执行模拟上架。请切换员工账号。", "Admins can manage products and platform settings but cannot run simulated listings. Switch to a staff account."))
+        if st.button(T("返回工作台", "Back to dashboard"), type="primary", key="listing_back_dashboard"):
+            st.session_state.nav = "工作台"
+            st.rerun()
         st.stop()
 
-    st.title(T("商品上架","Product Listing"))
-    st.caption(T("选品 → 一键上架到 Shopify / Etsy / 独立站","Select → List to Shopify / Etsy / Custom Store"))
+    page_header(
+        "P08 · EXECUTION",
+        T("商品上架", "Product Listing"),
+        T("选择商品与平台，检查 Listing 并保存模拟上架记录。", "Select a product and platform, review the listing and save a simulated record."),
+        T("模拟上架 · 不调用平台 API", "Simulation · No platform API"),
+        "coral",
+    )
 
     # ── 初始化 listing session_state / Init listing session_state ──
     if "listing_records" not in st.session_state:
@@ -1815,8 +2163,8 @@ elif page == "商品上架":
                 b64 = get_img(p.get("img", ""))
                 status = p["listing_status"]
                 is_pending = status == "待上架"
-                border = "2px solid #FF8C42" if i == selected_product_idx else ("1px solid #e0d5cc" if is_pending else "1px solid #34a853")
-                bg = "#FFF8F0" if i == selected_product_idx else ("#fff" if is_pending else "#f0faf0")
+                border = "2px solid #ff7f6e" if i == selected_product_idx else ("1px solid rgba(255,255,255,.12)" if is_pending else "1px solid rgba(74,225,131,.35)")
+                bg = "rgba(255,127,110,.08)" if i == selected_product_idx else ("rgba(255,255,255,.045)" if is_pending else "rgba(74,225,131,.06)")
 
                 status_badge_cn = "🟡 待上架" if is_pending else "🟢 已上架"
                 status_badge_en = "🟡 Pending" if is_pending else "🟢 Listed"
@@ -1827,7 +2175,7 @@ elif page == "商品上架":
                     card_html += f'<img src="data:image/jpeg;base64,{b64}" style="width:64px;height:64px;border-radius:6px;object-fit:cover;margin:4px 0;"><br>'
                 else:
                     card_html += '<span style="font-size:28px;">🐾</span><br>'
-                card_html += f'''<div style="font-weight:600;font-size:12px;">{pname(p)}</div>
+                card_html += f'''<div style="font-weight:600;font-size:12px;">{escape_html(pname(p))}</div>
                     <div style="font-size:11px;color:#FF8C42;font-weight:700;">¥{p["price"]:.2f}</div>
                     <div style="font-size:10px;color:#888;">成本 ¥{p["cost"]:.2f}</div></div>'''
                 st.markdown(card_html, unsafe_allow_html=True)
@@ -1876,8 +2224,8 @@ elif page == "商品上架":
         for i, (pkey, pinfo) in enumerate(PLATFORMS.items()):
             with plat_cols[i]:
                 is_sel_plat = selected_platform == pkey
-                border_p = "2px solid #FF8C42" if is_sel_plat else "1px solid #e0d5cc"
-                bg_p = "#FFF8F0" if is_sel_plat else "#fff"
+                border_p = "2px solid #ff7f6e" if is_sel_plat else "1px solid rgba(255,255,255,.12)"
+                bg_p = "rgba(255,127,110,.08)" if is_sel_plat else "rgba(255,255,255,.045)"
                 st.markdown(f"""<div style="border:{border_p};border-radius:8px;padding:12px;text-align:center;background:{bg_p};min-height:110px;">
                     <div style="font-size:28px;">{pinfo['icon']}</div>
                     <div style="font-weight:700;font-size:13px;">{pinfo['name']}</div>
@@ -1911,22 +2259,22 @@ elif page == "商品上架":
 
         # ── 一键上架按钮 ──
         if sel_pending:
-            st.markdown(T("### 🚀 确认上架", "### 🚀 Confirm Listing"))
+            st.markdown(T("### 确认模拟上架", "### Confirm Simulated Listing"))
 
             st.markdown(T(
-                f"即将将 **{pname(selected)}** 上架到 **{listing['platform_icon']} {listing['platform_name']}**",
-                f"About to list **{pname(selected)}** on **{listing['platform_icon']} {listing['platform_name']}**"
+                f"即将为 **{pname(selected)}** 生成 **{listing['platform_icon']} {listing['platform_name']}** Listing，并保存本地模拟记录。",
+                f"A **{listing['platform_icon']} {listing['platform_name']}** listing will be generated for **{pname(selected)}** and saved locally."
             ))
 
             st.caption(T(
-                f"上架链接预览: [{listing['listing_url']}]({listing['listing_url']})",
-                f"Listing URL preview: [{listing['listing_url']}]({listing['listing_url']})"
+                f"模拟链接预览：`{listing['listing_url']}`（不会请求该地址）",
+                f"Simulated URL preview: `{listing['listing_url']}` (the address will not be requested)"
             ))
 
-            if st.button(T("🚀 一键上架", "🚀 List Now"), type="primary", width="stretch", key="do_listing"):
-                with st.spinner(T("正在上架到平台...", "Publishing to platform...")):
+            if st.button(T("确认模拟上架", "Confirm Simulation"), type="primary", width="stretch", key="do_listing"):
+                with st.spinner(T("正在生成 Listing 并保存本地记录…", "Generating the listing and saving a local record…")):
                     import time
-                    time.sleep(1.5)
+                    time.sleep(0.6)
 
                 record = {
                     "product": pname(selected),
@@ -1948,20 +2296,19 @@ elif page == "商品上架":
                 _persist_listing()
 
                 st.success(T(
-                    f"✅ **{pname(selected)}** 已成功上架到 **{listing['platform_name']}**！",
-                    f"✅ **{pname(selected)}** successfully listed on **{listing['platform_name']}**!"
+                    f"✅ **模拟上架成功，已保存本地记录。** 商品：{pname(selected)} · 平台模板：{listing['platform_name']}",
+                    f"✅ **Simulated listing complete and saved locally.** Product: {pname(selected)} · Template: {listing['platform_name']}"
                 ))
-                st.balloons()
                 st.info(T(
-                    f"🔗 商品链接: [{listing['listing_url']}]({listing['listing_url']})\n\n📅 上架时间: {record['listed_at']}\n👤 操作人: {record['listed_by']}",
-                    f"🔗 Product URL: [{listing['listing_url']}]({listing['listing_url']})\n\n📅 Listed at: {record['listed_at']}\n👤 By: {record['listed_by']}"
+                    f"模拟链接：`{listing['listing_url']}`\n\n📅 记录时间：{record['listed_at']}\n👤 操作人：{record['listed_by']}",
+                    f"Simulated URL: `{listing['listing_url']}`\n\n📅 Recorded: {record['listed_at']}\n👤 By: {record['listed_by']}"
                 ))
-                time.sleep(2)
+                time.sleep(0.5)
                 st.rerun()
         else:
             st.info(T(
                 f"✅ **{pname(selected)}** 已经上架，如需重新上架到其他平台请先在「上架记录」中删除后重试。",
-                f"✅ **{pname(selected)}** is already listed. Delete from 'Listing History' to re-list on another platform."
+                f"✅ **{pname(selected)}** is already listed. Remove the existing record in 'Listing History' before re-listing."
             ))
 
     # ── 上架记录 Tab ──
@@ -2003,42 +2350,58 @@ elif page == "商品上架":
                         if r.get("product_en"):
                             st.caption(r["product_en"])
                     with rc[2]:
-                        st.markdown(T(f"平台","Platform"))
+                        st.markdown(T("平台","Platform"))
                         st.caption(r["platform_name"])
                     with rc[3]:
-                        st.markdown(T(f"售价","Price"))
+                        st.markdown(T("售价","Price"))
                         st.caption(f"¥{r['price']:.2f}")
                     with rc[4]:
-                        st.markdown(T(f"库存","Stock"))
+                        st.markdown(T("库存","Stock"))
                         st.caption(str(int(r.get("stock", 0))))
                     with rc[5]:
-                        st.markdown(T(f"时间","Time"))
+                        st.markdown(T("时间","Time"))
                         st.caption(r["listed_at"])
 
                     with st.expander(T(f"📄 查看 Listing — {r['title'][:40]}...", f"📄 View Listing — {r['title'][:40]}..."), expanded=False):
                         st.markdown(f"**{T('标题','Title')}:** {r['title']}")
-                        st.markdown(f"**{T('链接','URL')}:** [{r['listing_url']}]({r['listing_url']})")
+                        st.markdown(f"**{T('模拟链接','Simulated URL')}:** `{r['listing_url']}`")
                         st.caption(f"**SEO Tags:** {r.get('seo_tags','')}")
                         st.caption(T(
                             f"上架人: {r.get('listed_by','')} · 状态: {'✅ 成功' if r.get('status') == 'success' else '❌ 失败'}",
                             f"Listed by: {r.get('listed_by','')} · Status: {'✅ Success' if r.get('status') == 'success' else '❌ Failed'}"
                         ))
 
-                    if st.button(T("🗑️ 删除此记录", "🗑️ Delete Record"), key=f"del_listing_{i}"):
-                        product_name = r.get("product", "")
-                        if product_name in st.session_state.listing_product_status:
-                            del st.session_state.listing_product_status[product_name]
-                        st.session_state.listing_records.pop(i)
-                        _persist_listing()
-                        st.rerun()
+                    pending_delete = st.session_state.get("listing_delete_confirm_idx") == i
+                    if not pending_delete:
+                        if st.button(T("删除此记录", "Delete record"), key=f"del_listing_{i}"):
+                            st.session_state.listing_delete_confirm_idx = i
+                            st.rerun()
+                    else:
+                        st.warning(T("确认移除这条本地模拟记录？此操作会恢复商品的待上架状态。", "Remove this local simulation record and restore the product to pending?"))
+                        confirm_col, cancel_col = st.columns(2)
+                        with confirm_col:
+                            if st.button(T("确认移除", "Confirm removal"), type="primary", key=f"confirm_del_listing_{i}"):
+                                product_name = r.get("product", "")
+                                if product_name in st.session_state.listing_product_status:
+                                    del st.session_state.listing_product_status[product_name]
+                                st.session_state.listing_records.pop(i)
+                                st.session_state.listing_delete_confirm_idx = None
+                                _persist_listing()
+                                st.rerun()
+                        with cancel_col:
+                            if st.button(T("取消", "Cancel"), key=f"cancel_del_listing_{i}"):
+                                st.session_state.listing_delete_confirm_idx = None
+                                st.rerun()
 
 # ══ 导出报表 ══
 elif page == "导出报表":
-    st.title(T("导出报表", "Export Report"))
-    st.caption(T(
-        "一键下载公司数据报告（营收 / 库存 / 产品列表）",
-        "One-click download company data report (Revenue / Inventory / Product List)"
-    ))
+    page_header(
+        "P10 · DATA",
+        T("导出报表", "Export Data Reports"),
+        T("预览数据摘要，并安全导出营收、库存和产品列表。", "Preview summaries and safely export revenue, inventory and product data."),
+        T("虚拟演示数据", "Virtual demo data"),
+        "coral",
+    )
 
     # ── 公司信息 ──
     if st.session_state.use_company and company:
@@ -2058,12 +2421,13 @@ elif page == "导出报表":
         co_currency = "CNY"
 
     # ── 计算数据摘要 ──
-    today_data = daily_summary(txns, 1) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
-    week_data = daily_summary(txns, 7) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
-    month_data = daily_summary(txns, 30) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
+    today_data = daily_summary(txns, 1, inventory=inv) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
+    week_data = daily_summary(txns, 7, inventory=inv) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
+    month_data = daily_summary(txns, 30, inventory=inv) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
     inv_sum = inventory_value_summary(inv) if inv else {
         "total_qty": 0, "total_value": 0, "total_retail": 0,
-        "skus": 0, "low_stock": 0, "out_of_stock": 0,
+        "skus": 0, "low_stock": 0, "reorder_needed": 0,
+        "out_of_stock": 0, "normal": 0,
     }
 
     # ── 数据概览卡片 ──
@@ -2187,9 +2551,11 @@ elif page == "导出报表":
     # 构建 CSV
     csv_buffer = io.StringIO()
     csv_writer = csv.writer(csv_buffer)
+    csv_writer.writerow([T("数据说明", "Data notice"), T("虚拟演示数据，仅用于产品原型与求职展示", "Virtual demo data for product prototyping and portfolio demonstration only")])
+    csv_writer.writerow([])
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_name = co_name.replace(" ", "_").replace("（", "").replace("）", "")
+    safe_name = safe_filename(co_name)
 
     if export_mode.startswith("📊") or export_mode.startswith("📦"):
         # 写产品列表
@@ -2201,13 +2567,17 @@ elif page == "导出报表":
         source = inv if inv else default_prods
         for i in source:
             qty = int(i.get("qty", 0))
-            daily = int(i.get("daily_avg", 1))
-            safety = max(1, round(daily * 7))
-            status_val = "OOS" if qty == 0 else ("Low" if qty < safety else "Normal")
+            daily = float(i.get("daily_avg", 0))
+            item_summary = inventory_item_summary(i)
+            safety = item_summary["safety_stock"]
+            status_val = {
+                "断货": "OOS", "低库存": "Low", "建议补货": "Reorder",
+                "滞销": "Stale", "正常": "Normal",
+            }.get(item_summary["status"], item_summary["status"])
             csv_writer.writerow([
-                co_name,
-                pname(i),
-                i.get("sku", ""),
+                csv_safe(co_name),
+                csv_safe(pname(i)),
+                csv_safe(i.get("sku", "")),
                 qty,
                 i.get("cost", 0),
                 i.get("price", 0),
@@ -2244,6 +2614,7 @@ elif page == "导出报表":
     txt_buffer = io.StringIO()
     txt_buffer.write(f"{'='*60}\n")
     txt_buffer.write(f"{T('公司数据报告', 'Company Data Report')}\n")
+    txt_buffer.write(f"{T('虚拟演示数据，仅用于产品原型与求职展示', 'Virtual demo data for product prototyping and portfolio demonstration only')}\n")
     txt_buffer.write(f"{'='*60}\n")
     txt_buffer.write(f"{T('公司名称', 'Company')}: {co_name} / {co_name_en}\n")
     txt_buffer.write(f"{T('成立时间', 'Established')}: {co_established}\n")
@@ -2274,9 +2645,11 @@ elif page == "导出报表":
     source = inv if inv else default_prods
     for i in source:
         qty = int(i.get("qty", 0))
-        daily = int(i.get("daily_avg", 1))
-        safety = max(1, round(daily * 7))
-        status_val = "OOS" if qty == 0 else ("Low" if qty < safety else "Normal")
+        item_summary = inventory_item_summary(i)
+        status_val = {
+            "断货": "OOS", "低库存": "Low", "建议补货": "Reorder",
+            "滞销": "Stale", "正常": "Normal",
+        }.get(item_summary["status"], item_summary["status"])
         txt_buffer.write(
             f"{pname(i):<20} {i.get('sku',''):<10} {qty:>6} "
             f"¥{i.get('cost',0):>7.2f} ¥{i.get('price',0):>7.2f} {status_val:>10}\n"
@@ -2361,5 +2734,9 @@ elif page == "导出报表":
         with preview_tab2:
             st.code(txt_data[:3000] + ("\n..." if len(txt_data) > 3000 else ""), language="text")
 
-st.divider()
-st.image(load_image("footer"), width='stretch')
+st.markdown(
+    f"<div style='margin-top:36px;padding-top:16px;border-top:1px solid rgba(255,255,255,.06);"
+    f"display:flex;justify-content:space-between;color:var(--rs-muted);font:600 10px Geist;'>"
+    f"<span>RetailSense {VERSION}</span><span>{T('虚拟数据 · 本地规则引擎', 'Virtual data · Local rule engine')}</span></div>",
+    unsafe_allow_html=True,
+)
