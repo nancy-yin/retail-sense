@@ -1,8 +1,11 @@
 """
-测试选品评分引擎 — 用宠物饰品真实数据验证
+测试选品评分引擎 — 用宠物饰品虚拟数据验证
 """
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
 from retail_sense.scorer import ProductScorer
 
 
@@ -34,9 +37,6 @@ def test_scorer():
     assert results[0].final_score >= results[-1].final_score, "第一名应 >= 最后一名"
     assert all(0 <= r.final_score <= 100 for r in results), "分数应在0-100之间"
     print("\n✅ 所有断言通过")
-
-    return results
-
 
 if __name__ == "__main__":
     test_scorer()

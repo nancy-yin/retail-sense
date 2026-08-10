@@ -1,13 +1,15 @@
 """
-RetailSense v2.4 — AI 零售选品与库存决策系统
+RetailSense v2.5.1 — AI 零售选品与库存决策系统
 """
 import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
+from io import BytesIO
+
+from PIL import Image, UnidentifiedImageError
 from retail_sense.scorer import ProductScorer
 from retail_sense.pricing import CostBreakdown, PricingModel
-from retail_sense.inventory import InventoryStatus
 from retail_sense.copywriter import CopyGenerator
 from retail_sense.intent import IntentEngine
 from retail_sense.sales_script import SalesScriptGenerator
@@ -28,6 +30,7 @@ from retail_sense.data_persistence import (
     load_allocation_log, save_allocation_log,
     load_listing_log, save_listing_log,
 )
+from retail_sense.text_safety import csv_safe, escape_html, safe_filename
 
 st.set_page_config(page_title="RetailSense", page_icon="🐾", layout="wide")
 
@@ -288,7 +291,7 @@ if not is_logged_in():
                 _T("设置密码", "Choose Password"),
                 type="password",
                 key="reg_pass_field",
-                placeholder=_T("至少6位", "Min 6 characters"),
+                placeholder=_T("至少8位", "Min 8 characters"),
             )
             reg_pass2 = st.text_input(
                 _T("确认密码", "Confirm Password"),
@@ -312,7 +315,7 @@ if not is_logged_in():
 
         st.markdown(
             f'<div class="login-footer-text">'
-            f'{_T("RetailSense v2.4 · 宠物温馨风 · 管理员可通过系统预设账号登录", "RetailSense v2.4 · Pet-friendly · Admin login via system preset")}'
+            f'{_T("RetailSense v2.5.1 · 宠物温馨风 · 管理员可通过系统预设账号登录", "RetailSense v2.5.1 · Pet-friendly · Admin login via system preset")}'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -363,10 +366,11 @@ is_en = st.session_state.lang == "en"
 T = lambda cn, en: en if is_en else cn
 def pname(p): return p.get("name_en" if is_en else "name", p.get("name",""))
 
-VERSION = "v2.4"
+VERSION = "v2.5.1"
 CHANGELOG = """
-**v2.4 (2026-08-06)** 🤖 管家v3.0：真实数据查询+操作建议+思考过程
-**v2.3 (2026-08-04)** 🆕 卡片库存+搜索置顶+真实平台+产品图
+**v2.5.1 (2026-08-10)** 🔒 核心计算精度、安全边界、虚拟案例口径与测试完善
+**v2.4 (2026-08-06)** 🤖 管家v3.0：本地数据查询+操作建议+思考过程
+**v2.3 (2026-08-04)** 🆕 卡片库存+搜索置顶+平台配置+产品图
 **v2.2 (2026-08-04)** 🆕 案例库+引导+更新日志+悬停
 **v2.1 (2026-08-04)** 🤖 多Agent+双语+库存整数化
 **v2.0 (2026-08-04)** 📊 仪表盘+区域分析+虚拟管家
@@ -388,6 +392,7 @@ if not inv and not txns:
 with st.sidebar:
     # 🐾 当前用户信息
     user = current_user()
+    safe_user = escape_html(user)
     role = current_role()
     role_badge = "🛡️" if role == "admin" else "👤"
     role_label = "管理员" if role == "admin" else ("普通用户" if role == "user" else "")
@@ -400,7 +405,7 @@ with st.sidebar:
         <span style="font-size:22px;">🐾</span>
         <div style="flex:1;min-width:0;">
             <div style="font-weight:700;font-size:13px;color:#5a4a3a;
-                 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{user}</div>
+                 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{safe_user}</div>
             <div style="font-size:10px;color:#FF8C42;font-weight:500;">
                 {role_badge} {role_label_en if is_en else role_label}
             </div>
@@ -484,10 +489,20 @@ with st.sidebar:
                             label_visibility="collapsed",
                         )
                         if uploaded is not None:
-                            with open(filepath, "wb") as f:
-                                f.write(uploaded.getbuffer())
-                            st.success(T(f"✅ {display_name} 已更新！", f"✅ {display_name} updated!"))
-                            st.rerun()
+                            if uploaded.size > 5 * 1024 * 1024:
+                                st.error(T("图片不能超过 5 MB", "Image must be 5 MB or smaller"))
+                            else:
+                                try:
+                                    image_bytes = uploaded.getvalue()
+                                    with Image.open(BytesIO(image_bytes)) as image:
+                                        image.verify()
+                                    with Image.open(BytesIO(image_bytes)) as image:
+                                        converted = image.convert("RGB")
+                                        converted.save(filepath, "JPEG", quality=90)
+                                    st.success(T(f"✅ {display_name} 已更新！", f"✅ {display_name} updated!"))
+                                    st.rerun()
+                                except (UnidentifiedImageError, OSError, ValueError):
+                                    st.error(T("文件不是有效图片", "The uploaded file is not a valid image"))
 
                         # Reset button to remove custom image
                         if has_custom:
@@ -643,10 +658,13 @@ if page == "工作台":
     else:
         st.info(T("手动模式 — 暂无数据","Manual mode — No data"))
 
-    today = daily_summary(txns, 1) if txns else {"revenue":0,"orders":0,"profit":0,"cost":0}
-    week = daily_summary(txns, 7) if txns else {"revenue":0,"orders":0,"profit":0,"cost":0}
-    month = daily_summary(txns, 30) if txns else {"revenue":0,"orders":0,"profit":0,"cost":0}
-    inv_summary = inventory_value_summary(inv) if inv else {"total_qty":0,"total_value":0,"skus":0,"low_stock":0,"out_of_stock":0,"total_retail":0}
+    today = daily_summary(txns, 1, inventory=inv) if txns else {"revenue":0,"orders":0,"profit":0,"cost":0}
+    week = daily_summary(txns, 7, inventory=inv) if txns else {"revenue":0,"orders":0,"profit":0,"cost":0}
+    month = daily_summary(txns, 30, inventory=inv) if txns else {"revenue":0,"orders":0,"profit":0,"cost":0}
+    inv_summary = inventory_value_summary(inv) if inv else {
+        "total_qty": 0, "total_value": 0, "skus": 0, "low_stock": 0,
+        "reorder_needed": 0, "out_of_stock": 0, "normal": 0, "total_retail": 0,
+    }
 
     c = st.columns(4)
     c[0].metric(T("今日营收","Today"), f"¥{today['revenue']:,.0f}", f"{today['orders']}{T('单',' orders')}")
@@ -658,10 +676,11 @@ if page == "工作台":
     st.divider()
     st.subheader(T("库存状态","Inventory Status"))
     cards = st.columns(3)
-    normal_count = inv_summary['skus'] - inv_summary['low_stock'] - inv_summary['out_of_stock']
+    normal_count = inv_summary['normal']
+    low_count = inv_summary['low_stock'] + inv_summary['reorder_needed']
     card_data = [
         (T("正常","Normal"), normal_count, "ok", "#34a853"),
-        (T("低库存","Low Stock"), inv_summary['low_stock'], "warn", "#f4b400"),
+        (T("低库存","Low Stock"), low_count, "warn", "#f4b400"),
         (T("断货","Out of Stock"), inv_summary['out_of_stock'], "danger", "#ea4335"),
     ]
     for i, (label, count, css_class, color) in enumerate(card_data):
@@ -685,7 +704,7 @@ if page == "工作台":
                 st.markdown(f"""<div class="card-hover ok" style="min-height:50px;text-align:center;">
                     <div style="font-size:11px;color:#888;">{txn['date']}</div>
                     <div style="font-size:18px;font-weight:700;color:#FF8C42;">¥{txn['revenue']:,.0f}</div>
-                    <div style="font-size:10px;color:#aaa;">{txn.get('product','')}</div></div>""", unsafe_allow_html=True)
+                    <div style="font-size:10px;color:#aaa;">{escape_html(txn.get('product',''))}</div></div>""", unsafe_allow_html=True)
     else:
         st.caption(T("暂无数据","No data"))
 
@@ -825,13 +844,13 @@ elif page == "定价模型":
     with st.container(border=True):
         c1, c2, c3 = st.columns(3)
         with c1:
-            raw = st.number_input(T("裸件成本","Raw Material"), value=2.80, step=0.10, format="%.2f")
-            proc = st.number_input(T("加工费","Processing"), value=1.20, step=0.10, format="%.2f")
+            raw = st.number_input(T("裸件成本","Raw Material"), min_value=0.0, value=2.80, step=0.10, format="%.2f")
+            proc = st.number_input(T("加工费","Processing"), min_value=0.0, value=1.20, step=0.10, format="%.2f")
         with c2:
-            pack = st.number_input(T("包装费","Packaging"), value=0.50, step=0.10, format="%.2f")
-            ship = st.number_input(T("物流费","Shipping"), value=1.50, step=0.10, format="%.2f")
+            pack = st.number_input(T("包装费","Packaging"), min_value=0.0, value=0.50, step=0.10, format="%.2f")
+            ship = st.number_input(T("物流费","Shipping"), min_value=0.0, value=1.50, step=0.10, format="%.2f")
         with c3:
-            plat = st.number_input(T("平台费","Platform Fee"), value=0.85, step=0.10, format="%.2f")
+            plat = st.number_input(T("平台费","Platform Fee"), min_value=0.0, value=0.85, step=0.10, format="%.2f")
             target = st.slider(T("目标利润率","Target Margin"), 20, 70, 45, 5, format="%d%%")
 
         st.divider()
@@ -881,19 +900,21 @@ elif page == "库存监控":
     else:
         st.info(T("手动模式 — 使用示例数据","Manual mode — Demo data"))
 
-    # 复用全局已加载的库存数据（公司真实数据或示例数据）
+    # 复用全局已加载的库存数据（虚拟公司数据或示例数据）
     # inv is already set at module level from company data or demo fallback
 
     rows = []
     for i in inv:
         qty = int(i.get("qty", 0))
-        daily = int(i.get("daily_avg", 1))
-        lead = i.get("lead_days", 3)
-        safety = max(1, round(daily * 7))
-        reorder_qty = max(round(daily), safety + round(daily * lead) - qty) if qty < safety else 0
-        status_cn = "断货" if qty == 0 else ("低库存" if qty < safety else "正常")
-        status_en = "OOS" if qty == 0 else ("Low" if qty < safety else "Normal")
-        status_color = "#ea4335" if qty == 0 else ("#f4b400" if qty < safety else "#34a853")
+        daily = float(i.get("daily_avg", 0))
+        item_summary = inventory_item_summary(i)
+        safety = item_summary["safety_stock"]
+        reorder_qty = item_summary["reorder_quantity"]
+        status_cn = item_summary["status"]
+        status_en = {
+            "断货": "OOS", "低库存": "Low", "建议补货": "Reorder",
+            "滞销": "Stale", "正常": "Normal",
+        }.get(status_cn, status_cn)
 
         rows.append({
             T("产品","Product"): pname(i),
@@ -914,24 +935,28 @@ elif page == "库存监控":
     for idx, item in enumerate(inv[:5]):
         with inv_cards[idx]:
             qty = item.get("qty",0)
-            status = "ok" if qty>20 else ("warn" if qty>0 else "danger")
+            inventory_status = inventory_item_summary(item)["status"]
+            status = "danger" if inventory_status == "断货" else (
+                "warn" if inventory_status in {"低库存", "建议补货"} else "ok"
+            )
             b64 = get_img(item.get("img",""))
             if b64:
                 st.markdown(f'<img src="data:image/jpeg;base64,{b64}" style="width:50px;height:50px;border-radius:4px;object-fit:cover;margin-bottom:4px;">', unsafe_allow_html=True)
             st.markdown(f"""<div class="card-hover {status}" style="min-height:50px;">
                 <div style="font-size:22px;font-weight:800;">{qty}</div>
-                <div style="font-size:11px;color:#888;">{pname(item)}</div></div>""", unsafe_allow_html=True)
+                <div style="font-size:11px;color:#888;">{escape_html(pname(item))}</div></div>""", unsafe_allow_html=True)
 
 # ══ 案例库 ══
 elif page == "案例库":
     st.title(T("案例库","Case Studies"))
-    st.caption(T("真实商家如何用 RetailSense 降本增效","How real businesses save with RetailSense"))
+    st.caption(T("虚拟业务案例：演示 RetailSense 的降本增效思路","Virtual scenarios demonstrating RetailSense workflows"))
     cases = get_cases()
     for i, case in enumerate(cases):
         with st.container(border=True):
             c1, c2 = st.columns([2,1])
             with c1:
                 st.markdown(f"### {case['company']}")
+                st.caption(T("虚拟案例 · 指标与反馈均为演示设定", "Virtual case · Metrics and feedback are illustrative"))
                 st.caption(f"{case['industry']} · {case['region']} · {T('环节：'+case['stage'],'Stage: '+case['stage'])}")
                 with st.expander(T("痛点","Problem"), expanded=(i==0)):
                     st.markdown(f"**{T('使用前','Before')}:** {case['problem']}\n\n**{T('解决方案','Solution')}:** {case['solution']}")
@@ -942,6 +967,7 @@ elif page == "案例库":
                     mc[1].metric(T("成本","Cost"), a['cost'], delta=f"↓ {b['cost']}", delta_color="normal")
                     mc[2].metric(T("人力","People"), a['people'], delta=f"↓ {b['people']}", delta_color="inverse")
                     mc[3].metric(T("错误率","Errors"), a['error'], delta=f"↓ {b['error']}", delta_color="normal")
+                st.markdown(T("**虚拟反馈（演示文案）：**", "**Illustrative feedback:**"))
                 st.markdown(f"> *{case['testimonial']}*")
             with c2:
                 st.markdown(T("**使用产品**","**Products**"))
@@ -1827,7 +1853,7 @@ elif page == "商品上架":
                     card_html += f'<img src="data:image/jpeg;base64,{b64}" style="width:64px;height:64px;border-radius:6px;object-fit:cover;margin:4px 0;"><br>'
                 else:
                     card_html += '<span style="font-size:28px;">🐾</span><br>'
-                card_html += f'''<div style="font-weight:600;font-size:12px;">{pname(p)}</div>
+                card_html += f'''<div style="font-weight:600;font-size:12px;">{escape_html(pname(p))}</div>
                     <div style="font-size:11px;color:#FF8C42;font-weight:700;">¥{p["price"]:.2f}</div>
                     <div style="font-size:10px;color:#888;">成本 ¥{p["cost"]:.2f}</div></div>'''
                 st.markdown(card_html, unsafe_allow_html=True)
@@ -1961,7 +1987,7 @@ elif page == "商品上架":
         else:
             st.info(T(
                 f"✅ **{pname(selected)}** 已经上架，如需重新上架到其他平台请先在「上架记录」中删除后重试。",
-                f"✅ **{pname(selected)}** is already listed. Delete from 'Listing History' to re-list on another platform."
+                f"✅ **{pname(selected)}** is already listed. Remove the existing record in 'Listing History' before re-listing."
             ))
 
     # ── 上架记录 Tab ──
@@ -2058,12 +2084,13 @@ elif page == "导出报表":
         co_currency = "CNY"
 
     # ── 计算数据摘要 ──
-    today_data = daily_summary(txns, 1) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
-    week_data = daily_summary(txns, 7) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
-    month_data = daily_summary(txns, 30) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
+    today_data = daily_summary(txns, 1, inventory=inv) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
+    week_data = daily_summary(txns, 7, inventory=inv) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
+    month_data = daily_summary(txns, 30, inventory=inv) if txns else {"revenue": 0, "orders": 0, "profit": 0, "cost": 0}
     inv_sum = inventory_value_summary(inv) if inv else {
         "total_qty": 0, "total_value": 0, "total_retail": 0,
-        "skus": 0, "low_stock": 0, "out_of_stock": 0,
+        "skus": 0, "low_stock": 0, "reorder_needed": 0,
+        "out_of_stock": 0, "normal": 0,
     }
 
     # ── 数据概览卡片 ──
@@ -2189,7 +2216,7 @@ elif page == "导出报表":
     csv_writer = csv.writer(csv_buffer)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_name = co_name.replace(" ", "_").replace("（", "").replace("）", "")
+    safe_name = safe_filename(co_name)
 
     if export_mode.startswith("📊") or export_mode.startswith("📦"):
         # 写产品列表
@@ -2201,13 +2228,17 @@ elif page == "导出报表":
         source = inv if inv else default_prods
         for i in source:
             qty = int(i.get("qty", 0))
-            daily = int(i.get("daily_avg", 1))
-            safety = max(1, round(daily * 7))
-            status_val = "OOS" if qty == 0 else ("Low" if qty < safety else "Normal")
+            daily = float(i.get("daily_avg", 0))
+            item_summary = inventory_item_summary(i)
+            safety = item_summary["safety_stock"]
+            status_val = {
+                "断货": "OOS", "低库存": "Low", "建议补货": "Reorder",
+                "滞销": "Stale", "正常": "Normal",
+            }.get(item_summary["status"], item_summary["status"])
             csv_writer.writerow([
-                co_name,
-                pname(i),
-                i.get("sku", ""),
+                csv_safe(co_name),
+                csv_safe(pname(i)),
+                csv_safe(i.get("sku", "")),
                 qty,
                 i.get("cost", 0),
                 i.get("price", 0),
@@ -2274,9 +2305,11 @@ elif page == "导出报表":
     source = inv if inv else default_prods
     for i in source:
         qty = int(i.get("qty", 0))
-        daily = int(i.get("daily_avg", 1))
-        safety = max(1, round(daily * 7))
-        status_val = "OOS" if qty == 0 else ("Low" if qty < safety else "Normal")
+        item_summary = inventory_item_summary(i)
+        status_val = {
+            "断货": "OOS", "低库存": "Low", "建议补货": "Reorder",
+            "滞销": "Stale", "正常": "Normal",
+        }.get(item_summary["status"], item_summary["status"])
         txt_buffer.write(
             f"{pname(i):<20} {i.get('sku',''):<10} {qty:>6} "
             f"¥{i.get('cost',0):>7.2f} ¥{i.get('price',0):>7.2f} {status_val:>10}\n"

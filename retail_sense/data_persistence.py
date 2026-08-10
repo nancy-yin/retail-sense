@@ -9,8 +9,10 @@ to JSON files under .auth/ directory. Survives page refresh and company switch.
 """
 
 from __future__ import annotations
+
 import json
 import os
+import tempfile
 from datetime import datetime
 
 # ── 文件路径 / File Paths ──
@@ -22,6 +24,7 @@ LISTING_LOG_PATH = os.path.join(AUTH_DIR, "listing_log.json")
 def _ensure_dir():
     """确保 .auth 目录存在 / Ensure .auth directory exists"""
     os.makedirs(AUTH_DIR, exist_ok=True)
+    os.chmod(AUTH_DIR, 0o700)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -129,12 +132,27 @@ def _load_json(path: str) -> dict | None:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             return None
     return None
 
 
 def _save_json(path: str, data: dict) -> None:
-    """保存 JSON 文件 / Save JSON file"""
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+    """原子保存 JSON 文件并限制文件权限 / Atomically save with private permissions"""
+    _ensure_dir()
+    file_descriptor, temp_path = tempfile.mkstemp(dir=AUTH_DIR, prefix=".tmp-")
+    try:
+        os.fchmod(file_descriptor, 0o600)
+        with os.fdopen(file_descriptor, "w", encoding="utf-8") as file:
+            json.dump(data, file, ensure_ascii=False, indent=2, default=str)
+            file.write("\n")
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temp_path, path)
+        os.chmod(path, 0o600)
+    except Exception:
+        try:
+            os.unlink(temp_path)
+        except FileNotFoundError:
+            pass
+        raise

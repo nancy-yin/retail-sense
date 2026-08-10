@@ -4,11 +4,13 @@ Scout → Price → Copy → Monitor 四Agent流水线
 """
 from dataclasses import dataclass, field
 from datetime import datetime
-from .scorer import ProductScorer
-from .pricing import CostBreakdown, PricingModel
+
 from .copywriter import CopyGenerator
 from .intent import IntentEngine
+from .inventory import InventoryStatus
+from .pricing import CostBreakdown, PricingModel
 from .sales_script import SalesScriptGenerator
+from .scorer import ProductScorer
 
 
 @dataclass
@@ -73,7 +75,7 @@ class PriceAgent:
 
             state.priced.append({
                 "name": r.product_name,
-                "cost": round(prod["cost"]),
+                "cost": result["total_cost"],
                 "suggested_price": result["suggested_price"],
                 "profit": result["profit"],
                 "margin": result["margin_rate"],
@@ -130,12 +132,23 @@ class MonitorAgent:
             # 从 data 中检查库存
             qty = prod.get("qty", prod.get("current_stock", 999))
             daily = prod.get("daily_avg", prod.get("daily_sales", 1))
+            inventory_status = InventoryStatus(
+                product_name=prod["name"],
+                current_stock=int(qty),
+                daily_sales=float(daily),
+                lead_days=int(prod.get("lead_days", 3)),
+            )
 
-            if qty == 0:
+            if inventory_status.status == "断货":
                 issues.append("断货！需立即补货")
-            elif qty < daily * 7:
-                issues.append(f"低库存（仅{qty}件，安全线{int(daily*7)}件）")
-            elif qty > daily * 60:
+            elif inventory_status.status in {"低库存", "建议补货"}:
+                issues.append(
+                    f"{inventory_status.status}（仅{qty}件，补货点"
+                    f"{inventory_status.reorder_point}件）"
+                )
+            elif daily <= 0 and qty > 0:
+                issues.append("无日均销量，暂不能计算周转")
+            elif daily > 0 and qty > daily * 60:
                 issues.append(f"库存积压（{qty}件，可支撑{int(qty/daily)}天）")
 
             # 检查定价是否合理

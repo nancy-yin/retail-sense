@@ -1,4 +1,4 @@
-# RetailSense v2.5 最终版 — 项目清单
+# RetailSense v2.5.1 修复版 — 项目清单
 
 > 备份文件：`RetailSense_v2.5_20260806_final.bundle` (801KB)  
 > 恢复命令：`git clone RetailSense_v2.5_20260806_final.bundle retail-sense`
@@ -10,13 +10,13 @@
 | 项目 | 数据 |
 |------|------|
 | 名称 | RetailSense — AI 零售选品与库存决策系统 |
-| 版本 | v2.5 |
+| 版本 | v2.5.1 |
 | 语言 | Python 3.11 + Streamlit |
-| 代码量 | 21个 .py 文件，约 7,000 行 |
-| 开发时长 | 15.5 小时（4天） |
-| Git 提交 | 30+ commits |
+| 代码量 | 当前本地副本 26 个 .py 文件；主程序与包约 6,300 行 |
+| 开发时长 | 作者记录 15.5 小时（4天，未独立验证） |
+| Git 提交 | 当前 HEAD 可核验为 46 commits |
 | GitHub | github.com/yinqiqi1005-crypto/retail-sense |
-| 公网 | https://0916eafa79c9a70d-223-73-3-11.serveousercontent.com |
+| 公网 | 历史演示地址（当前可用性待确认） |
 
 ---
 
@@ -40,6 +40,8 @@ retail-sense/
 │   ├── cases.py                 # 案例库 (60行)
 │   ├── agent.py                 # 智能管家v3 (1100行)
 │   ├── auth.py                  # 登录认证+角色权限 (200行)
+│   ├── security.py              # PBKDF2 密码哈希与旧哈希迁移
+│   ├── text_safety.py           # HTML/CSV/文件名安全处理
 │   ├── i18n.py                  # 中英双语字典 (170行)
 │   └── product_images.py        # 产品图base64 (168KB)
 ├── images/products/             # 8张产品图 (200×200)
@@ -49,6 +51,8 @@ retail-sense/
 ├── .auth/                       # 凭证+配置 (gitignore)
 ├── data/                        # 公司数据 (gitignore)
 ├── requirements.txt
+├── requirements-dev.txt         # 测试与静态检查依赖
+├── tests/                       # 13 项核心回归测试
 ├── RetailSense.command          # 桌面启动脚本
 └── RetailSense_v2.5_20260806_final.bundle  # Git备份
 ```
@@ -60,12 +64,12 @@ retail-sense/
 | # | 页面 | 功能 |
 |---|------|------|
 | 1 | 工作台 | 出入库仪表盘 + 智能管家 + 库存健康卡片 |
-| 2 | 案例库 | 3家真实公司案例（萌爪宠物/PawStyle/Bark&Co） |
-| 3 | 选品评分 | 8维评分 + 5大市场区域分析 + 活动日历 |
-| 4 | 定价模型 | 成本拆解 + 7种货币实时汇率换算 |
+| 2 | 案例库 | 3家虚拟业务案例（萌爪宠物/PawStyle/Bark&Co），指标与评价均为演示设定 |
+| 3 | 选品评分 | 4维加权评分 + 5大市场区域分析 + 内置活动日历 |
+| 4 | 定价模型 | 成本拆解 + 7种货币内置演示汇率换算 |
 | 5 | 销售自动化 | Scout→Price→Copy→Monitor 四Agent流水线 |
 | 6 | 库存监控 | 分页表格 + 库存概览卡片 |
-| 7 | 商品上架 | Shopify/Etsy/独立站一键上架 |
+| 7 | 商品上架 | Shopify/Etsy/独立站模拟上架与本地记录 |
 | 8 | 物流配发 | 34单模拟 + 配货 + 虚拟快递6阶段追踪 |
 | 9 | 导出报表 | CSV/文本格式一键下载 |
 | + | 登录系统 | admin/user 角色权限分离 |
@@ -78,7 +82,7 @@ retail-sense/
 |------|------|------|
 | 公司数据 | `~/Desktop/宠物饰品公司案例/` | 3家虚拟公司 JSON |
 | 账号密码 | `~/Desktop/📊日上/账号密码.json` | 可视凭证文件 |
-| 管理员凭证 | `.auth/admin_cred.json` | SHA-256 哈希存储 |
+| 管理员凭证 | `.auth/admin_cred.json` | 加盐 PBKDF2 哈希存储（兼容旧哈希自动迁移） |
 | 平台配置 | `.auth/platform_config.json` | Shopify/Etsy/物流 API |
 | 配货记录 | `.auth/allocation_log.json` | 持久化 |
 | 上架记录 | `.auth/listing_log.json` | 持久化 |
@@ -90,7 +94,7 @@ retail-sense/
 
 | 角色 | 账号 | 密码 |
 |------|------|------|
-| 管理员 | admin | admin123 |
+| 管理员 | admin | 本地设置，不在文档中提供 |
 | 员工 | 自行注册 | 自设 |
 
 ---
@@ -116,6 +120,40 @@ streamlit run app.py
 ```bash
 git clone ~/projects/retail-sense/RetailSense_v2.5_20260806_final.bundle retail-sense-restored
 ```
+
+---
+
+---
+
+## 🎤 面试介绍话术
+
+### 这是什么类型的软件？
+
+**Web 应用（SaaS 工具）—— 不是传统 App。**
+
+| 传统软件 | RetailSense |
+|------|------|
+| 下载 .exe / 去 App Store | ❌ 不用 |
+| 交开发者年费上架 | ❌ 免了 |
+| 不同系统装不同版本 | ❌ 不需要 |
+| **浏览器打开即用** | ✅ |
+| **手机电脑平板全兼容** | ✅ |
+| **独立登录系统 + 权限管理** | ✅ |
+| **AI 虚拟管家辅助决策** | ✅ |
+
+### 30秒电梯演讲
+
+> 「RetailSense 是 AI 驱动的宠物饰品零售管理 SaaS。打开浏览器就能用——手机上也能——帮店主做选品评分、多币种定价、库存监控、物流追踪，内置 AI 管家实时给运营建议。15 小时从零到上线，全中英双语。」
+
+### 类比
+
+就像 **Notion、飞书文档、ChatGPT** 那样——打开网址，登录，直接工作。但它是专门给宠物跨境零售用的。
+
+### 版本信息
+
+- **当前 v2.5.1**（2026-08-10）：计算与安全修复版
+- 8 个业务模块 + 登录认证 + 数据持久化
+- GitHub 开源：github.com/yinqiqi1005-crypto/retail-sense
 
 ---
 
