@@ -1,6 +1,8 @@
 """
 RetailSense v2.5.1 — AI 零售选品与库存决策系统
 """
+import base64
+
 import streamlit as st
 import pandas as pd
 import os
@@ -206,8 +208,8 @@ init_session()
 # 配货和上架等交互仅保存在当前访客的 Session 内存中。
 if is_read_only_demo() and not is_logged_in():
     st.session_state.logged_in = True
-    st.session_state.username = "演示访客"
-    st.session_state.role = "user"
+    st.session_state.username = "演示管理员"
+    st.session_state.role = "admin"
 
 if not is_logged_in():
     _is_en = st.session_state.lang == "en"
@@ -355,6 +357,24 @@ if "use_company" not in st.session_state: st.session_state.use_company = True
 if "company_file" not in st.session_state: st.session_state.company_file = "萌爪宠物用品.json"
 if "agent_msg" not in st.session_state: st.session_state.agent_msg = []
 if "first_visit" not in st.session_state: st.session_state.first_visit = True
+if "products" not in st.session_state:
+    st.session_state.products = [
+        {"name": "刻字狗牌", "name_en": "Engraved Dog Tag", "cost": 2.80, "price": 12.99, "competitors": 35, "search_growth": 22, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "img": "dog-tag"},
+        {"name": "发光项圈", "name_en": "LED Collar", "cost": 5.50, "price": 24.99, "competitors": 28, "search_growth": 15, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "img": "led-collar"},
+        {"name": "珐琅名牌", "name_en": "Enamel Nameplate", "cost": 3.20, "price": 16.99, "competitors": 18, "search_growth": 35, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "img": "enamel-plate"},
+        {"name": "牵引绳套装", "name_en": "Leash Set", "cost": 4.50, "price": 22.99, "competitors": 42, "search_growth": 8, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "img": "leash-set"},
+        {"name": "宠物领结", "name_en": "Pet Bow Tie", "cost": 1.50, "price": 9.99, "competitors": 55, "search_growth": -5, "trend_up": False, "annual_purchases": 3, "is_consumable": True, "img": "bow-tie"},
+        {"name": "亚克力牌", "name_en": "Acrylic Tag", "cost": 1.20, "price": 8.99, "competitors": 22, "search_growth": 18, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "img": "acrylic-tag"},
+        {"name": "宠物手链", "name_en": "Pet Bracelet", "cost": 2.00, "price": 14.99, "competitors": 15, "search_growth": 42, "trend_up": True, "annual_purchases": 1, "is_consumable": False, "img": "bracelet"},
+        {"name": "换牙零食", "name_en": "Teething Treats", "cost": 3.00, "price": 11.99, "competitors": 30, "search_growth": 28, "trend_up": True, "annual_purchases": 8, "is_consumable": True, "img": "treats"},
+    ]
+
+
+def _get_product_image(key: str) -> str:
+    """云端演示优先显示当前访客临时上传的产品图。"""
+    if is_read_only_demo():
+        return st.session_state.get("demo_product_images", {}).get(key, get_img(key))
+    return get_img(key)
 
 # ── 持久化辅助函数 / Persistence Helpers ──
 def _persist_allocation():
@@ -500,7 +520,11 @@ with st.sidebar:
                 st.caption(T("上传本地产品图片以替换默认图（支持 jpg/png/webp）",
                              "Upload local product images to replace defaults (jpg/png/webp)"))
                 image_dir = os.path.join(os.path.dirname(__file__), "images", "products")
-                os.makedirs(image_dir, exist_ok=True)
+                demo_images = None
+                if is_read_only_demo():
+                    demo_images = st.session_state.setdefault("demo_product_images", {})
+                else:
+                    os.makedirs(image_dir, exist_ok=True)
 
                 for key in get_all_product_keys():
                     display_name = get_product_display_name(key)
@@ -508,7 +532,7 @@ with st.sidebar:
 
                     c_img, c_upload = st.columns([0.8, 3])
                     with c_img:
-                        b64 = get_img(key)
+                        b64 = _get_product_image(key)
                         if b64:
                             st.markdown(
                                 f'<img src="data:image/jpeg;base64,{b64}" '
@@ -516,7 +540,7 @@ with st.sidebar:
                                 unsafe_allow_html=True,
                             )
                     with c_upload:
-                        has_custom = os.path.isfile(filepath)
+                        has_custom = key in demo_images if demo_images is not None else os.path.isfile(filepath)
                         status_badge = "🟢 " + T("已自定义", "Custom") if has_custom else "⚪ " + T("默认图", "Default")
                         st.caption(f"**{display_name}** — {status_badge}")
                         uploaded = st.file_uploader(
@@ -535,7 +559,12 @@ with st.sidebar:
                                         image.verify()
                                     with Image.open(BytesIO(image_bytes)) as image:
                                         converted = image.convert("RGB")
-                                        converted.save(filepath, "JPEG", quality=90)
+                                        if demo_images is not None:
+                                            output = BytesIO()
+                                            converted.save(output, "JPEG", quality=90)
+                                            demo_images[key] = base64.b64encode(output.getvalue()).decode("ascii")
+                                        else:
+                                            converted.save(filepath, "JPEG", quality=90)
                                     st.success(T(f"✅ {display_name} 已更新！", f"✅ {display_name} updated!"))
                                     st.rerun()
                                 except (UnidentifiedImageError, OSError, ValueError):
@@ -544,7 +573,9 @@ with st.sidebar:
                         # Reset button to remove custom image
                         if has_custom:
                             if st.button(T("恢复默认", "Reset"), key=f"img_reset_{key}"):
-                                if os.path.isfile(filepath):
+                                if demo_images is not None:
+                                    demo_images.pop(key, None)
+                                elif os.path.isfile(filepath):
                                     os.remove(filepath)
                                 st.rerun()
 
@@ -780,18 +811,6 @@ elif page == "选品评分":
         "coral",
     )
 
-    if "products" not in st.session_state:
-        st.session_state.products = [
-            {"name": "刻字狗牌", "name_en": "Engraved Dog Tag", "cost": 2.80, "price": 12.99, "competitors": 35, "search_growth": 22, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "img": "dog-tag"},
-            {"name": "发光项圈", "name_en": "LED Collar", "cost": 5.50, "price": 24.99, "competitors": 28, "search_growth": 15, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "img": "led-collar"},
-            {"name": "珐琅名牌", "name_en": "Enamel Nameplate", "cost": 3.20, "price": 16.99, "competitors": 18, "search_growth": 35, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "img": "enamel-plate"},
-            {"name": "牵引绳套装", "name_en": "Leash Set", "cost": 4.50, "price": 22.99, "competitors": 42, "search_growth": 8, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "img": "leash-set"},
-            {"name": "宠物领结", "name_en": "Pet Bow Tie", "cost": 1.50, "price": 9.99, "competitors": 55, "search_growth": -5, "trend_up": False, "annual_purchases": 3, "is_consumable": True, "img": "bow-tie"},
-            {"name": "亚克力牌", "name_en": "Acrylic Tag", "cost": 1.20, "price": 8.99, "competitors": 22, "search_growth": 18, "trend_up": True, "annual_purchases": 2, "is_consumable": False, "img": "acrylic-tag"},
-            {"name": "宠物手链", "name_en": "Pet Bracelet", "cost": 2.00, "price": 14.99, "competitors": 15, "search_growth": 42, "trend_up": True, "annual_purchases": 1, "is_consumable": False, "img": "bracelet"},
-            {"name": "换牙零食", "name_en": "Teething Treats", "cost": 3.00, "price": 11.99, "competitors": 30, "search_growth": 28, "trend_up": True, "annual_purchases": 8, "is_consumable": True, "img": "treats"},
-        ]
-
     products = st.session_state.products
     scorer = ProductScorer()
     region = st.radio(
@@ -823,7 +842,7 @@ elif page == "选品评分":
             key="scoring_product_index",
         )
         selected_product = products[selected_index]
-        b64 = get_img(selected_product.get("img", ""))
+        b64 = _get_product_image(selected_product.get("img", ""))
         if b64:
             st.markdown(
                 f'<img alt="{escape_html(pname(selected_product))}" src="data:image/jpeg;base64,{b64}" '
@@ -1357,7 +1376,7 @@ elif page == "销售自动化":
 
 # ══ 物流配发 ══
 elif page == "物流配发":
-    if is_admin():
+    if is_admin() and not is_read_only_demo():
         page_header(
             "P09 · EXECUTION",
             T("物流配发", "Logistics & Fulfillment"),
@@ -1952,7 +1971,7 @@ requests.post(WEBHOOK_URL, data=body, headers={{
 
 # ══ 商品上架 ══
 elif page == "商品上架":
-    if is_admin():
+    if is_admin() and not is_read_only_demo():
         page_header(
             "P08 · EXECUTION",
             T("商品上架", "Product Listing"),
@@ -2168,7 +2187,7 @@ elif page == "商品上架":
         for i, p in enumerate(products_for_listing):
             col_idx = i % 4
             with cols[col_idx]:
-                b64 = get_img(p.get("img", ""))
+                b64 = _get_product_image(p.get("img", ""))
                 status = p["listing_status"]
                 is_pending = status == "待上架"
                 border = "2px solid #ff7f6e" if i == selected_product_idx else ("1px solid rgba(255,255,255,.12)" if is_pending else "1px solid rgba(74,225,131,.35)")
@@ -2199,7 +2218,7 @@ elif page == "商品上架":
 
         detail_cols = st.columns([1, 2])
         with detail_cols[0]:
-            b64 = get_img(selected.get("img", ""))
+            b64 = _get_product_image(selected.get("img", ""))
             if b64:
                 st.markdown(f'<img src="data:image/jpeg;base64,{b64}" style="width:160px;height:160px;border-radius:10px;object-fit:cover;">', unsafe_allow_html=True)
 

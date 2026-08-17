@@ -2,6 +2,7 @@
 RetailSense — 登录/认证/会话管理
 Authentication & Session Management
 """
+import copy
 import json
 import os
 import re
@@ -10,6 +11,7 @@ import time
 
 import streamlit as st
 
+from retail_sense.runtime import is_read_only_demo
 from retail_sense.security import hash_password, needs_rehash, verify_password
 
 # ── 文件路径 ──
@@ -210,12 +212,11 @@ def is_admin() -> bool:
 
 # ── 平台API配置 / Platform API Config ──
 PLATFORM_CONFIG_PATH = os.path.join(AUTH_DIR, "platform_config.json")
+DEMO_PLATFORM_CONFIG_KEY = "demo_platform_config"
 
 
-def load_platform_config() -> dict:
-    """加载平台配置（售卖平台 + 物流API）"""
-    _ensure_dir()
-    default = {
+def _default_platform_config() -> dict:
+    return {
         "selling_platforms": {
             "shopify": {"store_url": "", "api_key": "", "webhook_secret": ""},
             "etsy": {"store_url": "", "api_key": ""},
@@ -223,11 +224,26 @@ def load_platform_config() -> dict:
         },
         "logistics_platforms": {"courier_company": "", "api_key": ""},
     }
+
+
+def load_platform_config() -> dict:
+    """加载平台配置（售卖平台 + 物流API）"""
+    default = _default_platform_config()
+    if is_read_only_demo():
+        if DEMO_PLATFORM_CONFIG_KEY not in st.session_state:
+            st.session_state[DEMO_PLATFORM_CONFIG_KEY] = default
+        return copy.deepcopy(st.session_state[DEMO_PLATFORM_CONFIG_KEY])
+
+    _ensure_dir()
     return _load_json(PLATFORM_CONFIG_PATH, default)
 
 
 def save_platform_config(config: dict):
     """保存平台配置"""
+    if is_read_only_demo():
+        st.session_state[DEMO_PLATFORM_CONFIG_KEY] = copy.deepcopy(config)
+        return
+
     _write_json_secure(PLATFORM_CONFIG_PATH, config)
 
 
