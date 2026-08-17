@@ -11,15 +11,14 @@ from datetime import datetime, timedelta
 
 from retail_sense.inventory import InventoryStatus
 
-# 虚拟公司数据目录：优先使用项目内实际包含 JSON 的目录，兼容旧路径
-_LEGACY_DIR = os.path.expanduser("~/Desktop/宠物饰品公司案例")
+# 虚拟公司数据目录：只读取仓库内的演示数据，避免依赖本机桌面路径。
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _PROJECT_DIR = os.path.join(_PROJECT_ROOT, "data")
 _PROJECT_CASE_DIR = os.path.join(_PROJECT_ROOT, "宠物饰品公司案例")
 
 
 def _find_companies_dir() -> str:
-    for candidate in (_PROJECT_DIR, _PROJECT_CASE_DIR, _LEGACY_DIR):
+    for candidate in (_PROJECT_DIR, _PROJECT_CASE_DIR):
         if os.path.isdir(candidate) and any(
             name.endswith(".json") for name in os.listdir(candidate)
         ):

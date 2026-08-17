@@ -15,6 +15,8 @@ import os
 import tempfile
 from datetime import datetime
 
+from retail_sense.runtime import is_read_only_demo
+
 # ── 文件路径 / File Paths ──
 AUTH_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".auth")
 ALLOCATION_LOG_PATH = os.path.join(AUTH_DIR, "allocation_log.json")
@@ -45,6 +47,9 @@ def save_allocation_log(
         waybill_cache: {order_id: waybill_no}
         ship_timestamps: {order_id: ISO datetime string}
     """
+    if is_read_only_demo():
+        return
+
     _ensure_dir()
     all_data = _load_json(ALLOCATION_LOG_PATH) or {}
 
@@ -74,6 +79,9 @@ def load_allocation_log(company_file: str) -> dict | None:
         {"alloc_results": {...}, "waybill_cache": {...}, "ship_timestamps": {...}}
         or None if no records found
     """
+    if is_read_only_demo():
+        return None
+
     _ensure_dir()
     all_data = _load_json(ALLOCATION_LOG_PATH) or {}
     return all_data.get(company_file)
@@ -95,6 +103,9 @@ def save_listing_log(
         listing_records: 上架记录列表 / List of listing records
         listing_product_status: {product_name: "待上架" | "已上架"}
     """
+    if is_read_only_demo():
+        return
+
     _ensure_dir()
     all_data = _load_json(LISTING_LOG_PATH) or {}
 
@@ -117,6 +128,9 @@ def load_listing_log(company_file: str) -> dict | None:
         {"listing_records": [...], "listing_product_status": {...}}
         or None if no records found
     """
+    if is_read_only_demo():
+        return None
+
     _ensure_dir()
     all_data = _load_json(LISTING_LOG_PATH) or {}
     return all_data.get(company_file)

@@ -30,6 +30,7 @@ from retail_sense.data_persistence import (
     load_allocation_log, save_allocation_log,
     load_listing_log, save_listing_log,
 )
+from retail_sense.runtime import is_read_only_demo
 from retail_sense.text_safety import csv_safe, escape_html, safe_filename
 from retail_sense.ui import (
     UI_THEMES,
@@ -200,6 +201,13 @@ inject_design_system(fs, st.session_state.ui_theme)
 
 # ── 登录系统 ──
 init_session()
+
+# Streamlit Community Cloud 为公开作品集运行只读演示模式：不创建共享账号，
+# 配货和上架等交互仅保存在当前访客的 Session 内存中。
+if is_read_only_demo() and not is_logged_in():
+    st.session_state.logged_in = True
+    st.session_state.username = "演示访客"
+    st.session_state.role = "user"
 
 if not is_logged_in():
     _is_en = st.session_state.lang == "en"

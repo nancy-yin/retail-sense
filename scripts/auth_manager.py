@@ -25,7 +25,6 @@ from retail_sense.security import hash_password
 from retail_sense.security import verify_password as verify_hash
 
 CRED_FILE = PROJECT_ROOT / ".auth" / "admin_cred.json"
-DESKTOP_FILE = Path(os.path.expanduser("~/Desktop/📊日上/账号密码.json"))
 
 
 def _load_cred() -> dict:
@@ -37,7 +36,7 @@ def _load_cred() -> dict:
 
 
 def _save_cred(cred: dict) -> None:
-    """Save credentials to JSON. Writes to both .auth/ and Desktop."""
+    """Save credentials only to the project-local .auth directory."""
     tmp = CRED_FILE.with_suffix(".tmp")
     CRED_FILE.parent.mkdir(parents=True, exist_ok=True)
     os.chmod(CRED_FILE.parent, 0o700)
@@ -47,11 +46,6 @@ def _save_cred(cred: dict) -> None:
     os.chmod(tmp, 0o600)
     os.replace(tmp, CRED_FILE)
     os.chmod(CRED_FILE, 0o600)
-    # Sync to Desktop
-    DESKTOP_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(DESKTOP_FILE, "w") as f:
-        json.dump({"admin":{"password":"******","role":"管理员","note":"密码已加密存储在项目 .auth/ 中"}}, f, ensure_ascii=False, indent=2)
-        f.write("\n")
 
 
 def verify_password(password: str) -> bool:
