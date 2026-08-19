@@ -2,8 +2,12 @@
 Generate 8 realistic product images (200x200) using Pillow.
 Replaces simple placeholders with more detailed, product-like images.
 """
-import os, sys, io, base64, math
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageEnhance
+import base64
+import io
+import math
+import os
+
+from PIL import Image, ImageDraw, ImageFont
 
 SIZE = 200
 OUT_DIR = os.path.expanduser("~/projects/retail-sense/images/products")
@@ -26,8 +30,8 @@ for fp in FONT_PATHS:
             font_small = ImageFont.truetype(fp, 11)
             font_large = ImageFont.truetype(fp, 14)
             break
-        except:
-            pass
+        except OSError:
+            continue
 
 if font_small is None:
     font_small = ImageFont.load_default()
@@ -534,7 +538,7 @@ def make_acrylic_tag():
 
     # Reflection on acrylic
     for i in range(20):
-        refl_x = plate_x1 = cx - plate_w // 2 + 15
+        refl_x = cx - plate_w // 2 + 15
         refl_y = cy - plate_h // 2 + 15 + i
         alpha = max(0, 60 - i * 3)
         draw.line(
@@ -800,13 +804,14 @@ with open(py_path, "r") as f:
 
 # Build new IMAGES dict
 images_str = "IMAGES = {\n"
-for name in products.keys():
+for name in products:
     b64 = base64_dict[name]
     images_str += f'    "{name}": """{b64}""",\n'
 images_str += "}\n"
 
 # Use marker-based replacement: replace from "IMAGES = {" to the closing "}"
 import re
+
 new_content = re.sub(
     r'IMAGES = \{.*?\n\}',
     images_str.strip(),

@@ -6,7 +6,6 @@ import hashlib
 import hmac
 import os
 
-
 ALGORITHM = "pbkdf2_sha256"
 ITERATIONS = 600_000
 

@@ -2,37 +2,55 @@
 RetailSense v2.5.1 — AI 零售选品与库存决策系统
 """
 import base64
-
-import streamlit as st
-import pandas as pd
 import os
 from datetime import datetime
 from io import BytesIO
 
+import pandas as pd
+import streamlit as st
 from PIL import Image, UnidentifiedImageError
-from retail_sense.scorer import ProductScorer
-from retail_sense.pricing import CostBreakdown, PricingModel
-from retail_sense.copywriter import CopyGenerator
-from retail_sense.intent import IntentEngine
-from retail_sense.sales_script import SalesScriptGenerator
-from retail_sense.dataloader import *
-from retail_sense.dataloader import get_demo_transactions, get_demo_inventory
-from retail_sense.regions import *
-from retail_sense.agent import VirtualAgent, AgentResponse
+
+from retail_sense.agent import VirtualAgent
 from retail_sense.agents import SalesPipeline
+from retail_sense.auth import (
+    current_role,
+    current_user,
+    do_login,
+    do_logout,
+    init_session,
+    is_admin,
+    is_logged_in,
+    load_platform_config,
+    register_user,
+    save_platform_config,
+)
 from retail_sense.cases import get_cases
-from retail_sense.product_images import get_img, get_all_product_keys, get_product_display_name
-from retail_sense.auth import init_session, is_logged_in, do_login, do_logout, current_user, current_role, is_admin, require_admin, require_user, register_user, load_platform_config, save_platform_config
-from retail_sense.logistics import (
-    get_mock_orders, get_warehouse_inventory, allocate_order,
-    get_logistics_tracking, generate_waybill_no, simulate_delivery_tracking,
-    get_courier_info, DELIVERY_PIPELINE, COURIER_PREFIXES, COURIER_NAMES,
-)
 from retail_sense.data_persistence import (
-    load_allocation_log, save_allocation_log,
-    load_listing_log, save_listing_log,
+    load_allocation_log,
+    load_listing_log,
+    save_allocation_log,
+    save_listing_log,
 )
+from retail_sense.dataloader import *
+from retail_sense.dataloader import get_demo_inventory, get_demo_transactions
+from retail_sense.logistics import (
+    DELIVERY_PIPELINE,
+    allocate_order,
+    generate_waybill_no,
+    get_logistics_tracking,
+    get_mock_orders,
+    get_warehouse_inventory,
+    simulate_delivery_tracking,
+)
+from retail_sense.pricing import CostBreakdown, PricingModel
+from retail_sense.product_images import (
+    get_all_product_keys,
+    get_img,
+    get_product_display_name,
+)
+from retail_sense.regions import *
 from retail_sense.runtime import is_read_only_demo
+from retail_sense.scorer import ProductScorer
 from retail_sense.text_safety import csv_safe, escape_html, safe_filename
 from retail_sense.ui import (
     UI_THEMES,
@@ -349,8 +367,8 @@ def load_image(key):
     if path.startswith("http"): return path
     return DEFAULT_IMAGES[key]
 
-for key in DEFAULT_IMAGES:
-    if f"img_{key}" not in st.session_state: st.session_state[f"img_{key}"] = DEFAULT_IMAGES[key]
+for key, img in DEFAULT_IMAGES.items():
+    if f"img_{key}" not in st.session_state: st.session_state[f"img_{key}"] = img
 
 if "nav" not in st.session_state: st.session_state.nav = "工作台"
 if "use_company" not in st.session_state: st.session_state.use_company = True
@@ -571,13 +589,12 @@ with st.sidebar:
                                     st.error(T("文件不是有效图片", "The uploaded file is not a valid image"))
 
                         # Reset button to remove custom image
-                        if has_custom:
-                            if st.button(T("恢复默认", "Reset"), key=f"img_reset_{key}"):
-                                if demo_images is not None:
-                                    demo_images.pop(key, None)
-                                elif os.path.isfile(filepath):
-                                    os.remove(filepath)
-                                st.rerun()
+                        if has_custom and st.button(T("恢复默认", "Reset"), key=f"img_reset_{key}"):
+                            if demo_images is not None:
+                                demo_images.pop(key, None)
+                            elif os.path.isfile(filepath):
+                                os.remove(filepath)
+                            st.rerun()
 
         # 平台管理 — 仅管理员 / Platform Management — admin only
         if is_admin():
@@ -1225,33 +1242,32 @@ elif page == "案例库":
         card_columns = st.columns(min(3, len(filtered_cases)), gap="medium")
         for index, case in enumerate(filtered_cases):
             original_index = cases.index(case)
-            with card_columns[index % len(card_columns)]:
-                with st.container(border=True):
-                    st.image(case_images[original_index % len(case_images)], use_container_width=True)
+            with card_columns[index % len(card_columns)], st.container(border=True):
+                st.image(case_images[original_index % len(case_images)], use_container_width=True)
+                st.markdown(
+                    f"<span class='rs-badge rs-badge--coral'>{T('虚拟案例', 'Fictional case')}</span>",
+                    unsafe_allow_html=True,
+                )
+                st.markdown(f"### {escape_html(case['company'])}")
+                st.caption(f"{escape_html(case['industry'])} · {escape_html(case['region'])} · {escape_html(case['stage'])}")
+                st.markdown(f"**{T('痛点', 'Problem')}**")
+                st.write(case["problem"])
+                st.caption(T("使用功能：", "Features: ") + "、".join(case["products_used"]))
+                with st.expander(T("查看详情  →", "View details  →"), expanded=False):
+                    st.markdown(f"**{T('使用前', 'Before')}**")
+                    st.write(case["problem"])
+                    st.markdown(f"**{T('解决方案', 'Solution')}**")
+                    st.write(case["solution"])
+                    metric_cols = st.columns(2)
+                    metric_cols[0].metric(T("耗时", "Time"), case["after"]["time"], delta=f"↓ {case['before']['time']}", delta_color="inverse")
+                    metric_cols[1].metric(T("成本", "Cost"), case["after"]["cost"], delta=f"↓ {case['before']['cost']}")
+                    metric_cols[0].metric(T("人力", "People"), case["after"]["people"], delta=f"↓ {case['before']['people']}", delta_color="inverse")
+                    metric_cols[1].metric(T("错误率", "Errors"), case["after"]["error"], delta=f"↓ {case['before']['error']}")
+                    st.markdown(T("**虚拟反馈（演示文案）**", "**Fictional feedback (demo copy)**"))
                     st.markdown(
-                        f"<span class='rs-badge rs-badge--coral'>{T('虚拟案例', 'Fictional case')}</span>",
+                        f'<div class="rs-case-feedback">“{escape_html(case["testimonial"])}”</div>',
                         unsafe_allow_html=True,
                     )
-                    st.markdown(f"### {escape_html(case['company'])}")
-                    st.caption(f"{escape_html(case['industry'])} · {escape_html(case['region'])} · {escape_html(case['stage'])}")
-                    st.markdown(f"**{T('痛点', 'Problem')}**")
-                    st.write(case["problem"])
-                    st.caption(T("使用功能：", "Features: ") + "、".join(case["products_used"]))
-                    with st.expander(T("查看详情  →", "View details  →"), expanded=False):
-                        st.markdown(f"**{T('使用前', 'Before')}**")
-                        st.write(case["problem"])
-                        st.markdown(f"**{T('解决方案', 'Solution')}**")
-                        st.write(case["solution"])
-                        metric_cols = st.columns(2)
-                        metric_cols[0].metric(T("耗时", "Time"), case["after"]["time"], delta=f"↓ {case['before']['time']}", delta_color="inverse")
-                        metric_cols[1].metric(T("成本", "Cost"), case["after"]["cost"], delta=f"↓ {case['before']['cost']}")
-                        metric_cols[0].metric(T("人力", "People"), case["after"]["people"], delta=f"↓ {case['before']['people']}", delta_color="inverse")
-                        metric_cols[1].metric(T("错误率", "Errors"), case["after"]["error"], delta=f"↓ {case['before']['error']}")
-                        st.markdown(T("**虚拟反馈（演示文案）**", "**Fictional feedback (demo copy)**"))
-                        st.markdown(
-                            f'<div class="rs-case-feedback">“{escape_html(case["testimonial"])}”</div>',
-                            unsafe_allow_html=True,
-                        )
 
 # ══ 销售自动化 ══
 elif page == "销售自动化":
@@ -1445,8 +1461,7 @@ elif page == "物流配发":
     total_pages = max(1, (len(orders) + PER_PAGE - 1) // PER_PAGE)
 
     # 矫正页码
-    if st.session_state.logistics_page > total_pages:
-        st.session_state.logistics_page = total_pages
+    st.session_state.logistics_page = min(st.session_state.logistics_page, total_pages)
     page = st.session_state.logistics_page
 
     start = (page - 1) * PER_PAGE
@@ -1521,15 +1536,15 @@ elif page == "物流配发":
                     _persist_allocation()
                     st.rerun()
                 # 配货完成后显示确认发货按钮（在展开区域内）
-                if oid in st.session_state.alloc_results and oid in st.session_state.logistics_expanded:
-                    if st.session_state.alloc_results[oid]["all_ok"]:
-                        if st.button(T("✅ 确认发货","✅ Confirm Ship"), key=f"confirm_ship_{oid}", type="primary"):
-                            waybill = generate_waybill_no()
-                            st.session_state.waybill_cache[oid] = waybill
-                            st.session_state.ship_timestamps[oid] = datetime.now().isoformat()
-                            st.session_state.tracking_cache.pop(oid, None)  # 清除旧缓存
-                            _persist_allocation()
-                            st.rerun()
+                if (oid in st.session_state.alloc_results and oid in st.session_state.logistics_expanded
+                        and st.session_state.alloc_results[oid]["all_ok"]
+                        and st.button(T("✅ 确认发货","✅ Confirm Ship"), key=f"confirm_ship_{oid}", type="primary")):
+                    waybill = generate_waybill_no()
+                    st.session_state.waybill_cache[oid] = waybill
+                    st.session_state.ship_timestamps[oid] = datetime.now().isoformat()
+                    st.session_state.tracking_cache.pop(oid, None)  # 清除旧缓存
+                    _persist_allocation()
+                    st.rerun()
 
             elif effective_status == "shipped":
                 if st.button(T("追踪","Track"), key=f"track_btn_{oid}"):
@@ -2562,7 +2577,8 @@ elif page == "导出报表":
     st.markdown(T("### 📥 下载导出", "### 📥 Download Export"))
 
     # ── 构建 CSV 内容 ──
-    import csv, io
+    import csv
+    import io
 
     # --- CSV 模式选择 ---
     export_mode = st.radio(
@@ -2584,7 +2600,7 @@ elif page == "导出报表":
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_name = safe_filename(co_name)
 
-    if export_mode.startswith("📊") or export_mode.startswith("📦"):
+    if export_mode.startswith(("📊", "📦")):
         # 写产品列表
         csv_writer.writerow([
             T("公司", "Company"), T("产品", "Product"), "SKU",
@@ -2613,7 +2629,7 @@ elif page == "导出报表":
                 status_val,
             ])
 
-    if export_mode.startswith("📊") or export_mode.startswith("💰"):
+    if export_mode.startswith(("📊", "💰")):
         csv_writer.writerow([])  # 空行分隔
         # 营收汇总
         csv_writer.writerow([

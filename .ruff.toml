@@ -1,0 +1,5 @@
+# Ruff 配置 — RetailSense 本地演示应用
+# 时间戳有意使用本地 naive 时间（datetime.now()）：存储与展示均为本地时区。
+# 不引入 tzinfo，避免 UTC 偏移导致展示时间错 8 小时，也避免 naive/aware 混算报错。
+[lint]
+ignore = ["DTZ"]

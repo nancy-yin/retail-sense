@@ -149,7 +149,7 @@ def main():
     except FileNotFoundError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — CLI 兜底错误处理：捕获所有非预期异常后报错退出
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 

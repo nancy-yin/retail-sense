@@ -83,7 +83,7 @@ def all_regions() -> list[str]:
     return list(REGIONS.keys())
 
 
-def upcoming_events(region_name: str, month: int = None) -> list:
+def upcoming_events(region_name: str, month: int | None = None) -> list:
     region = REGIONS.get(region_name)
     if not region:
         return []

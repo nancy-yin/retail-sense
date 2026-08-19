@@ -5,9 +5,10 @@ RetailSense — 虚拟管家 v3.0
 """
 
 from __future__ import annotations
-from datetime import datetime, timedelta
-from dataclasses import dataclass, field
+
 import re
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 
 # ═══════════════════════════════════════════════════════════════
 # 旧版命令兼容（保留原 COMMANDS 字典）
@@ -259,8 +260,8 @@ class VirtualAgent:
     # 核心处理方法
     # ═══════════════════════════════════════════════════════════
 
-    def process(self, user_input: str, company_data: dict = None,
-                transactions: list = None, inventory: list = None,
+    def process(self, user_input: str, company_data: dict | None = None,
+                transactions: list | None = None, inventory: list | None = None,
                 lang: str = "zh") -> AgentResponse:
         """处理用户输入并返回 AgentResponse
 
@@ -279,8 +280,8 @@ class VirtualAgent:
         for cmd, responses in COMMANDS.items():
             if cmd.lower() in inp_lower:
                 thinking.append(
-                    "🔍 匹配到旧版命令: {}".format(cmd) if not is_en
-                    else "🔍 Matched legacy command: {}".format(cmd)
+                    f"🔍 匹配到旧版命令: {cmd}" if not is_en
+                    else f"🔍 Matched legacy command: {cmd}"
                 )
                 return AgentResponse(
                     thinking=thinking,
@@ -431,8 +432,8 @@ class VirtualAgent:
             )
 
         lines = [
-            "📋 **产品列表** ({})".format(len(inventory)) if not is_en
-            else "📋 **Product Catalog** ({})".format(len(inventory))
+            f"📋 **产品列表** ({len(inventory)})" if not is_en
+            else f"📋 **Product Catalog** ({len(inventory)})"
         ]
         for item in inventory:
             name = item.get("name_en" if is_en else "name", item.get("name", ""))
@@ -450,7 +451,7 @@ class VirtualAgent:
 
             lines.append(
                 f"  {status} **{name}** — "
-                + ("库存 {qty}件 · ¥{price} · 日销 {daily}件").format(qty=qty, price=price, daily=daily)
+                + (f"库存 {qty}件 · ¥{price} · 日销 {daily}件")
                 if not is_en else
                 f"  {status} **{name}** — {qty} units · ${price} · {daily}/day"
             )
@@ -568,21 +569,21 @@ class VirtualAgent:
             f"{status_icon} **{name}** — {status_text}",
             "",
             ("📦 当前库存：**{qty} 件**" if not is_en else "📦 Current Stock: **{qty} units**").format(qty=qty),
-            ("💰 零售价：¥{price} | 成本：¥{cost} | 利润率：{margin:.0%}").format(price=price, cost=cost, margin=(price-cost)/price if price>0 else 0)
+            (f"💰 零售价：¥{price} | 成本：¥{cost} | 利润率：{(price-cost)/price if price>0 else 0:.0%}")
             if not is_en else
-            ("💰 Price: ${price} | Cost: ${cost} | Margin: {margin:.0%}").format(price=price, cost=cost, margin=(price-cost)/price if price>0 else 0),
-            ("📈 日均销量：{daily:.1f} 件/天").format(daily=daily)
+            (f"💰 Price: ${price} | Cost: ${cost} | Margin: {(price-cost)/price if price>0 else 0:.0%}"),
+            (f"📈 日均销量：{daily:.1f} 件/天")
             if not is_en else
-            ("📈 Daily Sales: {daily:.1f} units/day").format(daily=daily),
+            (f"📈 Daily Sales: {daily:.1f} units/day"),
             ("⏱ 周转天数：{turnover} 天" if turnover < float('inf') else "⏱ 周转天数：∞（无动销）").format(turnover=turnover)
             if not is_en else
             ("⏱ Turnover: {turnover} days" if turnover < float('inf') else "⏱ Turnover: ∞ (no sales)").format(turnover=turnover),
-            ("🛡 安全库存：{safety} 件 | 补货触发点：{point} 件").format(safety=safety_stock, point=reorder_point)
+            (f"🛡 安全库存：{safety_stock} 件 | 补货触发点：{reorder_point} 件")
             if not is_en else
-            ("🛡 Safety Stock: {safety} units | Reorder Point: {point} units").format(safety=safety_stock, point=reorder_point),
-            ("📦 SKU: {sku} | 进货周期: {lead}天").format(sku=sku, lead=lead_days)
+            (f"🛡 Safety Stock: {safety_stock} units | Reorder Point: {reorder_point} units"),
+            (f"📦 SKU: {sku} | 进货周期: {lead_days}天")
             if not is_en else
-            ("📦 SKU: {sku} | Lead Time: {lead} days").format(sku=sku, lead=lead_days),
+            (f"📦 SKU: {sku} | Lead Time: {lead_days} days"),
         ]
 
         answer = "\n".join(lines)
@@ -734,20 +735,20 @@ class VirtualAgent:
             medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"{rank}.")
             lines.append(
                 f"{medal} **{name}** — "
-                + ("利润 ¥{profit:,.2f} | 利润率 {margin:.0%} | 销{qty}件").format(profit=profit, margin=margin, qty=qty)
+                + (f"利润 ¥{profit:,.2f} | 利润率 {margin:.0%} | 销{qty}件")
                 if not is_en else
                 f"{medal} **{name}** — profit ${profit:,.2f} | margin {margin:.0%} | {qty} sold"
             )
 
         # 操作建议：最高利润产品
         if scored:
-            top_name, top_profit, top_margin, _, _ = scored[0]
+            top_name, _top_profit, top_margin, _, _ = scored[0]
             if top_margin > 0.4:
                 lines.append("")
                 lines.append(
-                    "💡 建议：{}利润率高达 {:.0%}，建议加大推广和库存投入".format(top_name, top_margin)
+                    f"💡 建议：{top_name}利润率高达 {top_margin:.0%}，建议加大推广和库存投入"
                     if not is_en else
-                    "💡 Tip: {} has {:.0%} margin — increase promotion and stock".format(top_name, top_margin)
+                    f"💡 Tip: {top_name} has {top_margin:.0%} margin — increase promotion and stock"
                 )
 
         return AgentResponse(

@@ -44,7 +44,7 @@ CUSTOMER_PROFILES = [
 class IntentEngine:
     """意图分析引擎"""
 
-    def __init__(self, profiles: list[CustomerProfile] = None):
+    def __init__(self, profiles: list[CustomerProfile] | None = None):
         self.profiles = profiles or CUSTOMER_PROFILES
 
     def match(self, product: dict) -> list[dict]:
@@ -59,34 +59,29 @@ class IntentEngine:
             reasons = []
 
             # 耗材类 → 性价比猎人 + 新手
-            if is_consumable:
-                if "性价比猎人" in profile.name or "新手" in profile.name:
-                    score += 30
-                    reasons.append("耗材属性匹配高复购需求")
+            if is_consumable and ("性价比猎人" in profile.name or "新手" in profile.name):
+                score += 30
+                reasons.append("耗材属性匹配高复购需求")
 
             # 高价定制 → 精致养宠 + 送礼
-            if price > 15 and not is_consumable:
-                if "精致" in profile.name or "礼物" in profile.name:
-                    score += 25
-                    reasons.append(f"¥{price:.0f} 定价匹配中高端消费")
+            if price > 15 and not is_consumable and ("精致" in profile.name or "礼物" in profile.name):
+                score += 25
+                reasons.append(f"¥{price:.0f} 定价匹配中高端消费")
 
             # 低价 → 性价比
-            if price < 10:
-                if "性价比" in profile.name:
-                    score += 20
-                    reasons.append("亲民价格匹配预算敏感群体")
+            if price < 10 and "性价比" in profile.name:
+                score += 20
+                reasons.append("亲民价格匹配预算敏感群体")
 
             # 个性化类 → 送礼 + 精致
-            if "名牌" in name or "定制" in name or "刻字" in name:
-                if "礼物" in profile.name or "精致" in profile.name:
-                    score += 20
-                    reasons.append("定制化属性匹配送礼/个性化需求")
+            if ("名牌" in name or "定制" in name or "刻字" in name) and ("礼物" in profile.name or "精致" in profile.name):
+                score += 20
+                reasons.append("定制化属性匹配送礼/个性化需求")
 
             # 零食/食品 → 新手 + 性价比
-            if "零食" in name or "食品" in name:
-                if "新手" in profile.name or "性价比" in profile.name:
-                    score += 15
-                    reasons.append("食品类适合入门试购")
+            if ("零食" in name or "食品" in name) and ("新手" in profile.name or "性价比" in profile.name):
+                score += 15
+                reasons.append("食品类适合入门试购")
 
             results.append({
                 "profile": profile.name,
