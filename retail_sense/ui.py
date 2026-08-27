@@ -10,62 +10,68 @@ from pathlib import Path
 import streamlit as st
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-UI_THEMES = ("晨雾暖白", "奶油珊瑚", "薄荷青灰")
+UI_THEMES = ("薄荷青灰", "科技风", "手帐风格")
 
 _THEME_TOKENS = {
-    "晨雾暖白": {
-        "bg": "#e7e4e1",
-        "surface_lowest": "#f8f6f3",
-        "surface_low": "#efebe7",
-        "surface": "#ffffff",
-        "surface_high": "#e2ddd9",
-        "surface_highest": "#d5cfca",
-        "text": "#342f37",
-        "muted": "#6f6872",
-        "coral": "#e96f61",
-        "coral_soft": "#b94a40",
-        "green": "#17865a",
-        "purple": "#7256ad",
-        "danger": "#c94d54",
-        "glass": "rgba(255,255,255,.48)",
-        "glass_strong": "rgba(255,255,255,.68)",
-        "background": "radial-gradient(circle at 12% 40%, rgba(188,170,230,.36) 0, transparent 42%), radial-gradient(circle at 88% 18%, rgba(255,164,145,.30) 0, transparent 40%), radial-gradient(circle at 68% 100%, rgba(98,196,157,.20) 0, transparent 38%), linear-gradient(145deg, #f6f1ed 0%, #e7e4e1 55%, #e1e8e5 100%)",
-        "header": "rgba(246,243,240,.72)",
-        "sidebar": "rgba(239,234,230,.82)",
-        "panel": "rgba(255,250,248,.72)",
-        "popover": "rgba(250,247,244,.97)",
+    "科技风": {
+        "bg": "#0a1020",
+        "font": "\"Inter\", \"Noto Sans SC\"",
+        "font_display": "\"Inter\", \"Noto Sans SC\"",
+        "surface_lowest": "#0f1a30",
+        "surface_low": "#13223c",
+        "surface": "#16263f",
+        "surface_high": "#1b2f4d",
+        "surface_highest": "#203757",
+        "text": "#e2e8f0",
+        "muted": "#94a3b8",
+        "coral": "#0ea5e9",
+        "coral_soft": "#0369a1",
+        "green": "#22d3ee",
+        "purple": "#818cf8",
+        "danger": "#fda4af",
+        "glass": "rgba(255,255,255,.10)",
+        "glass_strong": "rgba(255,255,255,.18)",
+        "background": "linear-gradient(135deg, #0a1020 0%, #0c1a38 55%, #0a2540 100%)",
+        "header": "rgba(10,16,32,.80)",
+        "sidebar": "rgba(12,20,40,.85)",
+        "panel": "rgba(20,30,52,.70)",
+        "popover": "rgba(16,26,46,.97)",
     },
-    "奶油珊瑚": {
-        "bg": "#ead8cf",
-        "surface_lowest": "#fff8f3",
-        "surface_low": "#f5e8df",
-        "surface": "#fffdfb",
-        "surface_high": "#e9d5c9",
-        "surface_highest": "#dcc7ba",
-        "text": "#49342f",
-        "muted": "#79635c",
-        "coral": "#d95f50",
-        "coral_soft": "#a83f34",
-        "green": "#2f8564",
-        "purple": "#8b668c",
-        "danger": "#bd4550",
-        "glass": "rgba(255,249,244,.50)",
-        "glass_strong": "rgba(255,250,246,.72)",
-        "background": "radial-gradient(circle at 14% 38%, rgba(255,178,151,.40) 0, transparent 42%), radial-gradient(circle at 86% 16%, rgba(240,139,124,.30) 0, transparent 38%), radial-gradient(circle at 72% 100%, rgba(149,190,158,.22) 0, transparent 40%), linear-gradient(145deg, #f7ebe3 0%, #ead8cf 52%, #e5d2cb 100%)",
-        "header": "rgba(250,238,230,.74)",
-        "sidebar": "rgba(242,225,216,.84)",
-        "panel": "rgba(255,247,241,.74)",
-        "popover": "rgba(255,248,243,.97)",
+    "手帐风格": {
+        "bg": "#fdf6ec",
+        "font": "\"ZCOOL KuaiLe\", \"Nunito\"",
+        "font_display": "\"ZCOOL KuaiLe\", \"Nunito\"",
+        "surface_lowest": "#fffdf8",
+        "surface_low": "#f8f0e3",
+        "surface": "#ffffff",
+        "surface_high": "#f3e8d8",
+        "surface_highest": "#eadcc8",
+        "text": "#5c4a3a",
+        "muted": "#a08b78",
+        "coral": "#e2534f",
+        "coral_soft": "#c0392b",
+        "green": "#65a30d",
+        "purple": "#b8a5d6",
+        "danger": "#e2534f",
+        "glass": "rgba(255,255,255,.72)",
+        "glass_strong": "rgba(255,255,255,.88)",
+        "background": "radial-gradient(circle at 12% 20%, rgba(233,179,76,.10) 0, transparent 45%), radial-gradient(circle at 88% 80%, rgba(226,83,79,.08) 0, transparent 45%), linear-gradient(145deg, #fdf6ec 0%, #faf0e2 55%, #f7ecdc 100%)",
+        "header": "rgba(255,249,238,.88)",
+        "sidebar": "rgba(255,249,238,.92)",
+        "panel": "rgba(255,253,248,.90)",
+        "popover": "rgba(255,253,248,.97)",
     },
     "薄荷青灰": {
         "bg": "#d3dfdc",
+        "font": "Hanken Grotesk",
+        "font_display": "Manrope",
         "surface_lowest": "#f5faf8",
         "surface_low": "#e6f0ed",
         "surface": "#fbfefd",
         "surface_high": "#d1e2dd",
         "surface_highest": "#c2d4cf",
         "text": "#263c3b",
-        "muted": "#58706e",
+        "muted": "#495f5d",
         "coral": "#dc6c5d",
         "coral_soft": "#ad493e",
         "green": "#167f63",
@@ -94,10 +100,18 @@ def _image_data_uri(relative_path: str) -> str:
 def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> None:
     """Apply the Stitch glassmorphism tokens to native Streamlit widgets."""
     tokens = _THEME_TOKENS.get(theme, _THEME_TOKENS[UI_THEMES[0]])
+
+    # 各主题的选中态样式（对齐各自模拟页）
+    if theme == "手帐风格":
+        nav_active = "background: rgba(246,227,200,.75) !important; box-shadow: none !important; border-radius: 14px;"
+    elif theme == "科技风":
+        nav_active = "background: rgba(56,189,248,.16) !important; box-shadow: inset 3px 0 0 #38bdf8, 0 0 12px rgba(56,189,248,.35) !important;"
+    else:
+        nav_active = "background: linear-gradient(rgba(255,127,110,.14), rgba(255,127,110,.14)) padding-box, var(--rs-glass-edge) border-box; box-shadow: inset 3px 0 0 var(--rs-coral), inset 0 1px 0 rgba(255,255,255,.14);"
     st.markdown(
         f"""
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Material+Symbols+Outlined:wght@300;400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&family=Nunito:wght@400;600;700;800;900&family=JetBrains+Mono:wght@600;700&family=ZCOOL+KuaiLe&family=Noto+Sans+SC:wght@400;500;600;700&family=Material+Symbols+Outlined:wght@300;400;500&display=swap');
 
         :root {{
             --rs-bg: {tokens["bg"]};
@@ -112,18 +126,18 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             --rs-outline-strong: rgba(255,255,255,.34);
             --rs-glass: {tokens["glass"]};
             --rs-glass-strong: {tokens["glass_strong"]};
-            --rs-glass-edge: linear-gradient(135deg, rgba(255,255,255,.48), rgba(255,255,255,.10) 42%, rgba(255,180,169,.22) 72%, rgba(206,189,255,.28));
+            --rs-glass-edge: linear-gradient(135deg, rgba(255,255,255,.75), rgba(255,255,255,.35) 45%, rgba(255,255,255,.60));
             --rs-coral: {tokens["coral"]};
             --rs-coral-soft: {tokens["coral_soft"]};
             --rs-green: {tokens["green"]};
             --rs-purple: {tokens["purple"]};
             --rs-danger: {tokens["danger"]};
-            --rs-radius: 10px;
+            --rs-radius: 16px;
             --rs-font-size: {base_font_px}px;
         }}
 
         html, body, [class*="css"] {{
-            font-family: "Hanken Grotesk", sans-serif;
+            font-family: {tokens["font"]}, sans-serif;
             font-size: var(--rs-font-size);
             color: var(--rs-text);
         }}
@@ -136,7 +150,7 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
         }}
         [data-testid="stHeader"] {{
             background: {tokens["header"]};
-            backdrop-filter: blur(28px) saturate(1.3);
+            backdrop-filter: blur(12px) saturate(1.3);
             border-bottom: 1px solid rgba(255,255,255,.16);
             box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
         }}
@@ -147,7 +161,7 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
         }}
 
         h1, h2, h3, h4, h5, h6 {{
-            font-family: "Manrope", sans-serif !important;
+            font-family: {tokens["font_display"]}, sans-serif !important;
             color: var(--rs-text) !important;
             letter-spacing: -.015em;
         }}
@@ -163,7 +177,7 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             min-width: 240px !important;
             background: {tokens["sidebar"]};
             border-right: 1px solid rgba(255,255,255,.20);
-            backdrop-filter: blur(32px) saturate(1.35);
+            backdrop-filter: blur(14px) saturate(1.35);
             box-shadow: inset -1px 0 0 rgba(255,255,255,.06), 12px 0 42px rgba(16,14,20,.16);
         }}
         [data-testid="stSidebarContent"] {{ padding: 1.3rem .8rem 1rem; }}
@@ -177,14 +191,14 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
         }}
         .rs-sidebar-brand {{ padding: .3rem .55rem 1rem; }}
         .rs-sidebar-brand__name {{
-            font: 800 22px/1 "Manrope", sans-serif;
+            font: 800 22px/1 {tokens["font_display"]}, sans-serif;
             color: var(--rs-green);
             letter-spacing: -.04em;
         }}
         .rs-sidebar-brand__sub {{
             margin-top: 7px;
             color: var(--rs-muted);
-            font: 600 10px/1 "Geist", sans-serif;
+            font: 600 10px/1 {tokens["font"]}, sans-serif;
             text-transform: uppercase;
             letter-spacing: .12em;
         }}
@@ -192,7 +206,7 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             padding: 12px 10px 4px;
             color: var(--rs-muted);
             opacity: .72;
-            font: 600 9px/1 "Geist", sans-serif;
+            font: 600 9px/1 {tokens["font"]}, sans-serif;
             text-transform: uppercase;
             letter-spacing: .16em;
         }}
@@ -205,7 +219,7 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             color: var(--rs-muted);
             background: transparent;
             box-shadow: none;
-            font: 500 .86rem/1 "Geist", sans-serif;
+            font: 500 .86rem/1 {tokens["font"]}, sans-serif;
             transition: .18s ease;
         }}
         [data-testid="stSidebar"] [data-testid="stButton"] button:hover {{
@@ -216,9 +230,8 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
         }}
         [data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"] {{
             color: var(--rs-coral-soft);
-            background: linear-gradient(rgba(255,127,110,.14), rgba(255,127,110,.14)) padding-box, var(--rs-glass-edge) border-box;
+            {nav_active}
             border-color: transparent;
-            box-shadow: inset 3px 0 0 var(--rs-coral), inset 0 1px 0 rgba(255,255,255,.14);
         }}
         [data-testid="stSidebar"] [data-testid="stButton"] button[kind="secondary"] {{
             color: var(--rs-text) !important;
@@ -237,9 +250,9 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             border: 1px solid transparent !important;
             background: linear-gradient(rgba(255,255,255,.08), rgba(255,255,255,.08)) padding-box, var(--rs-glass-edge) border-box !important;
             color: var(--rs-text) !important;
-            font: 600 .83rem/1 "Geist", sans-serif !important;
+            font: 600 .83rem/1 {tokens["font"]}, sans-serif !important;
             box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 8px 24px rgba(13,12,16,.10) !important;
-            backdrop-filter: blur(22px) saturate(1.3);
+            backdrop-filter: blur(9px) saturate(1.3);
             transition: transform .18s ease, border-color .18s ease, background .18s ease !important;
         }}
         [data-testid="stButton"] button:hover,
@@ -253,8 +266,8 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
         [data-testid="stFormSubmitButton"] button[kind="primary"],
         [data-testid="stDownloadButton"] button[kind="primary"] {{
             border-color: rgba(255,255,255,.28) !important;
-            background: linear-gradient(135deg, #ff9f91, var(--rs-coral)) !important;
-            color: #3b0805 !important;
+            background: linear-gradient(135deg, var(--rs-coral), var(--rs-coral-soft)) !important;
+            color: #ffffff !important;
             box-shadow: 0 10px 28px rgba(255,127,110,.16) !important;
         }}
         [data-testid="stButton"] button:focus-visible,
@@ -269,8 +282,8 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             background: linear-gradient(var(--rs-glass), var(--rs-glass)) padding-box, var(--rs-glass-edge) border-box !important;
             border: 1px solid transparent !important;
             border-radius: var(--rs-radius) !important;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.15), 0 14px 34px rgba(12,11,15,.13) !important;
-            backdrop-filter: blur(28px) saturate(1.35);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.50), 0 1px 2px rgba(0,0,0,.03), 0 2px 6px rgba(0,0,0,.03), 0 8px 20px rgba(0,0,0,.05) !important;
+            backdrop-filter: blur(12px) saturate(1.35);
             transition: border-color .2s ease, background .2s ease;
         }}
         [data-testid="stVerticalBlockBorderWrapper"] > div:hover,
@@ -281,13 +294,13 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
         [data-testid="stMetric"] {{ padding: 16px 18px; min-height: 112px; }}
         [data-testid="stMetricLabel"] {{
             color: var(--rs-muted);
-            font: 600 10px/1 "Geist", sans-serif;
+            font: 600 10px/1 {tokens["font"]}, sans-serif;
             text-transform: uppercase;
             letter-spacing: .10em;
         }}
         [data-testid="stMetricValue"] {{
             color: var(--rs-text);
-            font: 650 1.65rem/1.2 "Manrope", sans-serif;
+            font: 650 1.65rem/1.2 {tokens["font_display"]}, sans-serif;
         }}
         [data-testid="stMetricDelta"] {{ font-size: .72rem; }}
 
@@ -298,20 +311,20 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             background: linear-gradient(rgba(255,255,255,.72), rgba(255,255,255,.72)) padding-box, var(--rs-glass-edge) border-box !important;
             background-color: rgba(255,255,255,.62) !important;
             border: 1px solid transparent !important;
-            border-radius: 14px !important;
+            border-radius: 10px !important;
             box-shadow: inset 0 1px 0 rgba(255,255,255,.12) !important;
-            backdrop-filter: blur(18px) saturate(1.25);
+            backdrop-filter: blur(8px) saturate(1.25);
         }}
         .stTextInput input::placeholder, .stTextArea textarea::placeholder {{ color: rgba(51,47,55,.48); -webkit-text-fill-color: rgba(51,47,55,.48); }}
         .stTextInput [data-baseweb="input"],
         .stNumberInput [data-baseweb="input"] {{
-            min-height: 50px;
+            min-height: 56px;
             overflow: hidden;
             border: 1px solid transparent !important;
-            border-radius: 14px !important;
-            background: linear-gradient(rgba(255,250,249,.76), rgba(250,246,250,.72)) padding-box, linear-gradient(135deg, rgba(255,255,255,.86), rgba(255,180,169,.30), rgba(206,189,255,.42)) border-box !important;
+            border-radius: 10px !important;
+            background: linear-gradient(rgba(255,250,249,.76), rgba(250,246,250,.72)) padding-box, linear-gradient(135deg, rgba(255,255,255,.86), rgba(255,127,110,.30), rgba(206,189,255,.42)) border-box !important;
             box-shadow: inset 0 1px 0 rgba(255,255,255,.82), 0 8px 24px rgba(27,22,30,.10) !important;
-            backdrop-filter: blur(22px) saturate(1.25);
+            backdrop-filter: blur(9px) saturate(1.25);
             transition: transform .18s ease, box-shadow .18s ease;
         }}
         .stTextInput [data-baseweb="input"]:focus-within,
@@ -321,7 +334,7 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
         }}
         .stTextInput [data-baseweb="input"] input,
         .stNumberInput [data-baseweb="input"] input {{
-            min-height: 48px;
+            min-height: 52px;
             padding-left: 16px !important;
             background: transparent !important;
             background-color: transparent !important;
@@ -332,7 +345,7 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
         .stTextInput label, .stNumberInput label, .stTextArea label, .stSelectbox label {{
             margin-bottom: 7px;
             color: var(--rs-muted) !important;
-            font: 600 11px/1.2 "Geist", sans-serif !important;
+            font: 600 11px/1.2 {tokens["font"]}, sans-serif !important;
             letter-spacing: .02em;
         }}
         [data-baseweb="select"] > div {{
@@ -340,7 +353,7 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             padding-left: 7px;
             box-shadow: inset 0 1px 0 rgba(255,255,255,.82), 0 8px 24px rgba(27,22,30,.10) !important;
         }}
-        [data-baseweb="popover"], [role="listbox"] {{ background: {tokens["popover"]} !important; backdrop-filter: blur(24px); }}
+        [data-baseweb="popover"], [role="listbox"] {{ background: {tokens["popover"]} !important; backdrop-filter: blur(10px); }}
         [role="option"] {{ color: var(--rs-text) !important; }}
         .stSlider [data-baseweb="slider"] [role="slider"] {{ background: var(--rs-coral) !important; }}
         .stSlider [data-testid="stThumbValue"] {{ color: var(--rs-coral-soft) !important; }}
@@ -352,7 +365,7 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
         }}
         [data-testid="stTabs"] [role="tab"] {{
             color: var(--rs-muted);
-            font-family: "Geist", sans-serif;
+            font-family: {tokens["font"]}, sans-serif;
         }}
         [data-testid="stTabs"] [role="tab"][aria-selected="true"] {{
             color: var(--rs-coral-soft);
@@ -369,14 +382,14 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             border: 1px solid transparent;
             background: linear-gradient(var(--rs-glass), var(--rs-glass)) padding-box, var(--rs-glass-edge) border-box;
             border-radius: 10px;
-            backdrop-filter: blur(24px) saturate(1.3);
+            backdrop-filter: blur(10px) saturate(1.3);
         }}
         [data-testid="stAlert"] {{
             background: linear-gradient(var(--rs-glass), var(--rs-glass)) padding-box, var(--rs-glass-edge) border-box;
             border: 1px solid transparent;
             border-radius: var(--rs-radius);
             color: var(--rs-text);
-            backdrop-filter: blur(24px) saturate(1.3);
+            backdrop-filter: blur(10px) saturate(1.3);
         }}
 
         .card-hover {{
@@ -385,8 +398,8 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             padding: 16px !important;
             background: linear-gradient(var(--rs-glass), var(--rs-glass)) padding-box, var(--rs-glass-edge) border-box !important;
             color: var(--rs-text) !important;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.15), 0 14px 34px rgba(12,11,15,.13);
-            backdrop-filter: blur(28px) saturate(1.35);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.50), 0 1px 2px rgba(0,0,0,.03), 0 2px 6px rgba(0,0,0,.03), 0 8px 20px rgba(0,0,0,.05);
+            backdrop-filter: blur(12px) saturate(1.35);
             transition: .2s ease;
         }}
         .card-hover:hover {{
@@ -427,7 +440,7 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
         }}
         .rs-page-header__code {{
             color: var(--rs-coral-soft);
-            font: 700 10px/1 "Geist", sans-serif;
+            font: 700 10px/1 {tokens["font"]}, sans-serif;
             letter-spacing: .14em;
             text-transform: uppercase;
             margin-bottom: 10px;
@@ -444,7 +457,7 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             border-radius: 999px;
             background: rgba(74,225,131,.08);
             color: var(--rs-green);
-            font: 600 10px/1 "Geist", sans-serif;
+            font: 600 10px/1 {tokens["font"]}, sans-serif;
             letter-spacing: .04em;
         }}
         .rs-badge--coral {{
@@ -460,7 +473,7 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
         .rs-section-label {{
             margin: 22px 0 12px;
             color: var(--rs-muted);
-            font: 650 10px/1 "Geist", sans-serif;
+            font: 650 10px/1 {tokens["font"]}, sans-serif;
             text-transform: uppercase;
             letter-spacing: .13em;
         }}
@@ -474,8 +487,8 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             border-radius: 8px;
             background: linear-gradient(rgba(255,127,110,.10), rgba(255,127,110,.10)) padding-box, var(--rs-glass-edge) border-box;
             color: var(--rs-coral-soft);
-            font: 600 11px/1.4 "Geist", sans-serif;
-            backdrop-filter: blur(22px) saturate(1.3);
+            font: 600 11px/1.4 {tokens["font"]}, sans-serif;
+            backdrop-filter: blur(9px) saturate(1.3);
         }}
         .material-symbols-outlined {{
             font-family: "Material Symbols Outlined";
@@ -506,10 +519,10 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             padding: 46px 54px !important;
             background: {tokens["panel"]};
             border: 1px solid transparent;
-            border-radius: 20px;
+            border-radius: 16px;
             background: linear-gradient({tokens["panel"]}, {tokens["panel"]}) padding-box, var(--rs-glass-edge) border-box;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 24px 70px rgba(12,11,15,.22);
-            backdrop-filter: blur(32px) saturate(1.3);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 1px 2px rgba(0,0,0,.03), 0 2px 6px rgba(0,0,0,.03), 0 12px 28px rgba(0,0,0,.05);
+            backdrop-filter: blur(14px) saturate(1.3);
         }}
         .rs-login-hero {{
             min-height: 640px;
@@ -523,9 +536,9 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             isolation: isolate;
             overflow: hidden;
             border: 1px solid transparent;
-            border-radius: 20px;
+            border-radius: 16px;
             background-clip: padding-box;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.30), 0 24px 70px rgba(12,11,15,.20);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 1px 2px rgba(0,0,0,.03), 0 2px 6px rgba(0,0,0,.03), 0 12px 28px rgba(0,0,0,.05);
         }}
         .rs-login-hero::before {{
             content: "";
@@ -540,13 +553,13 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             padding: 16px 18px;
             border: 1px solid transparent;
             border-radius: 12px;
-            background: linear-gradient(rgba(44,38,40,.36), rgba(44,38,40,.36)) padding-box, linear-gradient(135deg, rgba(255,255,255,.74), rgba(255,255,255,.14), rgba(255,180,169,.36)) border-box;
+            background: linear-gradient(rgba(44,38,40,.36), rgba(44,38,40,.36)) padding-box, linear-gradient(135deg, rgba(255,255,255,.74), rgba(255,255,255,.14), var(--rs-coral)) border-box;
             box-shadow: inset 0 1px 0 rgba(255,255,255,.24), 0 14px 38px rgba(38,23,20,.12);
-            backdrop-filter: blur(22px) saturate(1.3);
+            backdrop-filter: blur(9px) saturate(1.3);
         }}
         .rs-login-brand {{
-            color: var(--rs-coral-soft);
-            font: 800 2rem/1 "Manrope", sans-serif;
+            color: #ffffff;
+            font: 800 2rem/1 {tokens["font_display"]}, sans-serif;
             letter-spacing: -.04em;
             text-shadow: 0 2px 18px rgba(26,17,18,.34);
         }}
@@ -556,10 +569,10 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             padding: 17px 18px;
             border: 1px solid transparent;
             border-radius: 9px;
-            background: linear-gradient(rgba(40,34,36,.42), rgba(40,34,36,.42)) padding-box, linear-gradient(135deg, rgba(255,255,255,.70), rgba(255,255,255,.16), rgba(255,180,169,.38)) border-box;
+            background: linear-gradient(rgba(40,34,36,.42), rgba(40,34,36,.42)) padding-box, linear-gradient(135deg, rgba(255,255,255,.70), rgba(255,255,255,.16), var(--rs-coral)) border-box;
             color: #fff;
             box-shadow: inset 0 1px 0 rgba(255,255,255,.24), 0 14px 40px rgba(38,23,20,.14);
-            backdrop-filter: blur(24px) saturate(1.25);
+            backdrop-filter: blur(10px) saturate(1.25);
         }}
         .rs-login-capabilities {{ display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }}
         .rs-login-capabilities span {{
@@ -568,7 +581,7 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             background: linear-gradient(rgba(74,225,131,.13), rgba(74,225,131,.13)) padding-box, linear-gradient(135deg, rgba(255,255,255,.42), rgba(74,225,131,.26)) border-box;
             border: 1px solid transparent;
             color: var(--rs-green);
-            font: 600 10px/1 "Geist", sans-serif;
+            font: 600 10px/1 {tokens["font"]}, sans-serif;
         }}
         .rs-login-form-title h2 {{ margin: 0 0 6px; font-size: 1.55rem !important; }}
         .rs-login-form-title p {{ margin: 0 0 20px; }}
@@ -588,7 +601,7 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             border-radius: 12px;
             background: linear-gradient(var(--rs-glass), var(--rs-glass)) padding-box, var(--rs-glass-edge) border-box;
             box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 16px 38px rgba(12,11,15,.13);
-            backdrop-filter: blur(28px) saturate(1.35);
+            backdrop-filter: blur(12px) saturate(1.35);
         }}
         .rs-welcome-panel::after {{
             content: "";
@@ -609,7 +622,7 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             border: 1px solid transparent !important;
             border-radius: 12px !important;
             background: linear-gradient(rgba(255,127,110,.10), rgba(255,127,110,.10)) padding-box, var(--rs-glass-edge) border-box !important;
-            backdrop-filter: blur(24px) saturate(1.3);
+            backdrop-filter: blur(10px) saturate(1.3);
         }}
         .export-title {{ color: var(--rs-coral-soft) !important; }}
 
