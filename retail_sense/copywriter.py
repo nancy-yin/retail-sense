@@ -4,6 +4,8 @@ RetailSense — AI 文案生成器 v3
 """
 import time
 
+from .copywriter_en import EN_PRODUCT_COPY
+
 # ═══════════════════════════════════════
 # 每品独立文案库 — 8个产品各不同
 # ═══════════════════════════════════════
@@ -370,7 +372,16 @@ $8.99，比找猫的寻猫启示便宜一万倍。
 class CopyGenerator:
     """AI 文案生成器 v3 — 每品独立个性"""
 
-    def generate(self, product: dict, style: str = "seo") -> str:
+    # 地区本地化：切换目标市场后，文案的直邮地区与地区名随之变化
+    REGION_LOCALIZE = {
+        "北美": {"direct": "美国直邮", "name": "美国"},
+        "欧洲": {"direct": "欧洲直邮", "name": "欧盟"},
+        "东南亚": {"direct": "东南亚直邮", "name": "东南亚"},
+        "日韩": {"direct": "日韩直邮", "name": "日韩"},
+        "澳洲": {"direct": "澳洲直邮", "name": "澳洲"},
+    }
+
+    def generate(self, product: dict, style: str = "seo", region: str = "北美") -> str:
         name = product.get("name", "")
         price = product.get("price", 0)
         cost = product.get("cost", 0)
@@ -386,9 +397,22 @@ class CopyGenerator:
             text = re.sub(r'\d+家竞品', f'{competitors}家竞品', text)
             # 替换所有价格（$ 或 ¥）
             text = re.sub(r'[$¥]\d+(?:\.\d{2})?', f'${price:.2f}', text)
+            # 地区本地化：直邮地区 + 地区名
+            terms = self.REGION_LOCALIZE.get(region, self.REGION_LOCALIZE["北美"])
+            text = text.replace("美国直邮", terms["direct"])
+            if region != "北美":
+                text = text.replace("美国", terms["name"])
             return text
 
         return f"{name} — ¥{price:.2f}\n高品质宠物用品 · 美国直邮"
+
+    def generate_en(self, product: dict, style: str = "seo", region: str = "北美") -> str:
+        """生成海外英文文案（Etsy/Amazon Top Seller 风格）"""
+        name = product.get("name", "")
+        copy_data = EN_PRODUCT_COPY.get(name)
+        if copy_data:
+            return copy_data.get(style, copy_data.get("seo", ""))
+        return f"{name} — premium pet supplies · US shipping"
 
     def stream_generate(self, product: dict, style: str = "seo"):
         content = self.generate(product, style)

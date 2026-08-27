@@ -10,33 +10,9 @@ from pathlib import Path
 import streamlit as st
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-UI_THEMES = ("薄荷青灰", "科技风", "手帐风格")
+UI_THEMES = ("薄荷青灰", "手帐风格")
 
 _THEME_TOKENS = {
-    "科技风": {
-        "bg": "#0a1020",
-        "font": "\"Inter\", \"Noto Sans SC\"",
-        "font_display": "\"Inter\", \"Noto Sans SC\"",
-        "surface_lowest": "#0f1a30",
-        "surface_low": "#13223c",
-        "surface": "#16263f",
-        "surface_high": "#1b2f4d",
-        "surface_highest": "#203757",
-        "text": "#e2e8f0",
-        "muted": "#94a3b8",
-        "coral": "#0ea5e9",
-        "coral_soft": "#0369a1",
-        "green": "#22d3ee",
-        "purple": "#818cf8",
-        "danger": "#fda4af",
-        "glass": "rgba(255,255,255,.10)",
-        "glass_strong": "rgba(255,255,255,.18)",
-        "background": "linear-gradient(135deg, #0a1020 0%, #0c1a38 55%, #0a2540 100%)",
-        "header": "rgba(10,16,32,.80)",
-        "sidebar": "rgba(12,20,40,.85)",
-        "panel": "rgba(20,30,52,.70)",
-        "popover": "rgba(16,26,46,.97)",
-    },
     "手帐风格": {
         "bg": "#fdf6ec",
         "font": "\"ZCOOL KuaiLe\", \"Nunito\"",
@@ -104,10 +80,27 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
     # 各主题的选中态样式（对齐各自模拟页）
     if theme == "手帐风格":
         nav_active = "background: rgba(246,227,200,.75) !important; box-shadow: none !important; border-radius: 14px;"
-    elif theme == "科技风":
-        nav_active = "background: rgba(56,189,248,.16) !important; box-shadow: inset 3px 0 0 #38bdf8, 0 0 12px rgba(56,189,248,.35) !important;"
     else:
         nav_active = "background: linear-gradient(rgba(255,127,110,.14), rgba(255,127,110,.14)) padding-box, var(--rs-glass-edge) border-box; box-shadow: inset 3px 0 0 var(--rs-coral), inset 0 1px 0 rgba(255,255,255,.14);"
+
+    # 手帐风 · 可爱便签质感（更大圆角 + 胶囊按钮 + 虚线便签边）
+    journal_extra = ""
+    if theme == "手帐风格":
+        journal_extra = """
+        /* ── 手帐风 · 可爱便签感 ── */
+        [data-testid="stVerticalBlockBorderWrapper"] > div,
+        [data-testid="stMetric"],
+        .rs-welcome-panel {
+            border-radius: 20px !important;
+        }
+        [data-testid="stButton"] button,
+        [data-testid="stFormSubmitButton"] button {
+            border-radius: 999px !important;
+        }
+        [data-testid="stMetric"] {
+            border: 1px dashed rgba(194,57,43,.28) !important;
+        }
+        """
     st.markdown(
         f"""
         <style>
@@ -134,6 +127,9 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             --rs-danger: {tokens["danger"]};
             --rs-radius: 16px;
             --rs-font-size: {base_font_px}px;
+            --rs-font: {tokens["font"]}, sans-serif;
+            --rs-font-display: {tokens["font_display"]}, sans-serif;
+            --rs-warn: #e6a23c;
         }}
 
         html, body, [class*="css"] {{
@@ -165,9 +161,10 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             color: var(--rs-text) !important;
             letter-spacing: -.015em;
         }}
-        h1 {{ font-size: 2rem !important; font-weight: 700 !important; }}
-        h2 {{ font-size: 1.45rem !important; font-weight: 650 !important; }}
-        h3 {{ font-size: 1.05rem !important; font-weight: 650 !important; }}
+        h1 {{ font-size: {base_font_px + 18}px !important; font-weight: 700 !important; }}
+        h2 {{ font-size: {base_font_px + 10}px !important; font-weight: 650 !important; }}
+        h3 {{ font-size: {base_font_px + 4}px !important; font-weight: 650 !important; }}
+        h4 {{ font-size: {base_font_px + 2}px !important; font-weight: 650 !important; }}
         p, label, .stCaption {{ color: var(--rs-muted); }}
         a {{ color: var(--rs-green); }}
         hr {{ border-color: rgba(255,255,255,.07) !important; }}
@@ -617,6 +614,41 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
         .rs-welcome-panel h2 {{ margin: 10px 0 6px; font-size: 2.25rem !important; }}
         .rs-welcome-panel p {{ max-width: 680px; margin: 0; }}
 
+        .rs-kpi-grid {{
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 18px;
+            margin: 6px 0 12px;
+        }}
+        .rs-kpi {{
+            padding: 20px 22px;
+            border-radius: var(--rs-radius);
+            background: linear-gradient(var(--rs-glass), var(--rs-glass)) padding-box, var(--rs-glass-edge) border-box;
+            border: 1px solid transparent;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.50), 0 1px 2px rgba(0,0,0,.03), 0 2px 6px rgba(0,0,0,.03), 0 8px 20px rgba(0,0,0,.05);
+            backdrop-filter: blur(12px) saturate(1.35);
+        }}
+        .rs-kpi__label {{
+            font: 600 10px/1 {tokens["font"]}, sans-serif;
+            color: var(--rs-muted);
+            text-transform: uppercase;
+            letter-spacing: .1em;
+            margin-bottom: 10px;
+        }}
+        .rs-kpi__value {{
+            font: 800 27px/1.1 {tokens["font_display"]}, sans-serif;
+            color: var(--rs-text);
+            letter-spacing: -.02em;
+        }}
+        .rs-kpi__sub {{
+            margin-top: 9px;
+            font: 600 11px/1 {tokens["font"]}, sans-serif;
+        }}
+        .rs-kpi--coral .rs-kpi__sub {{ color: var(--rs-coral-soft); }}
+        .rs-kpi--green .rs-kpi__sub {{ color: var(--rs-green); }}
+        .rs-kpi--purple .rs-kpi__sub {{ color: var(--rs-purple); }}
+        .rs-kpi--warn .rs-kpi__sub {{ color: var(--rs-warn); }}
+
         .export-download-area {{
             padding: 24px 20px !important;
             border: 1px solid transparent !important;
@@ -644,6 +676,7 @@ def inject_design_system(base_font_px: int = 13, theme: str = UI_THEMES[0]) -> N
             [data-testid="stHorizontalBlock"]:has(.rs-login-hero) > [data-testid="column"] {{ min-width: 100% !important; flex-basis: 100% !important; }}
             [data-testid="column"]:has(.rs-login-form-title) {{ padding: 30px 18px !important; }}
         }}
+        {journal_extra}
         </style>
         """,
         unsafe_allow_html=True,

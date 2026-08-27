@@ -86,7 +86,7 @@ h3 {{ font-size: {fs+2}px !important; }}
 }}
 [data-testid="stButton"] button:hover {{ transform: translateY(-1px) !important; box-shadow: 0 3px 10px rgba(0,0,0,0.08) !important; }}
 [data-testid="stButton"] button[kind="primary"] {{
-    background: linear-gradient(135deg, #FF8C42, #FF6B35) !important; color: white !important; border: none !important;
+    background: linear-gradient(135deg, var(--rs-coral), var(--rs-coral-soft)) !important; color: white !important; border: none !important;
 }}
 [data-testid="stButton"] button[kind="primary"]:hover {{ box-shadow: 0 4px 14px rgba(255,107,53,0.25) !important; transform: translateY(-1px) !important; }}
 
@@ -100,14 +100,14 @@ h3 {{ font-size: {fs+2}px !important; }}
 [data-testid="stSidebar"] [data-testid="stButton"] button {{
     border-radius: 6px !important; text-align: left !important; padding: 8px 12px !important; margin: 1px 0 !important; font-size: {fs}px !important;
 }}
-[data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"] {{ background: linear-gradient(135deg, #FF8C42, #FF6B35) !important; }}
+[data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"] {{ background: linear-gradient(135deg, var(--rs-coral), var(--rs-coral-soft)) !important; }}
 [data-testid="stSidebar"] [data-testid="stButton"] button[kind="secondary"] {{ background: transparent !important; border: 1px solid #e0d5cc !important; color: #5a4a3a !important; }}
 
-.card-hover {{ border: 1px solid #e8e0d8; border-radius: 8px; padding: 14px; text-align: center; transition: all 0.2s; background: #fff; }}
+.card-hover {{ border: 1px solid rgba(255,255,255,.4); border-radius: 12px; padding: 14px; text-align: center; transition: all 0.2s; background: var(--rs-glass); }}
 .card-hover:hover {{ box-shadow: 0 3px 12px rgba(0,0,0,0.06); transform: translateY(-1px); }}
-.card-hover.warn {{ border-left: 3px solid #f4b400; }}
-.card-hover.danger {{ border-left: 3px solid #ea4335; }}
-.card-hover.ok {{ border-left: 3px solid #34a853; }}
+.card-hover.warn {{ border-left: 3px solid var(--rs-warn); }}
+.card-hover.danger {{ border-left: 3px solid var(--rs-danger); }}
+.card-hover.ok {{ border-left: 3px solid var(--rs-green); }}
 
 /* ── 响应式适配 / Responsive ── */
 
@@ -260,9 +260,8 @@ if not is_logged_in():
             st.rerun()
 
         login_theme_labels_en = {
-            "晨雾暖白": "Morning Mist",
-            "奶油珊瑚": "Cream Coral",
             "薄荷青灰": "Mint Slate",
+            "手帐风格": "Journal",
         }
         login_theme_choice = st.selectbox(
             _T("界面风格", "Visual style"),
@@ -469,9 +468,8 @@ with st.sidebar:
 
     nav_group(T("界面风格", "Visual style"))
     theme_labels_en = {
-        "晨雾暖白": "Morning Mist",
-        "奶油珊瑚": "Cream Coral",
         "薄荷青灰": "Mint Slate",
+        "手帐风格": "Journal",
     }
     theme_choice = st.selectbox(
         T("选择界面风格", "Choose visual style"),
@@ -649,7 +647,24 @@ with st.sidebar:
                     st.rerun()
     st.divider()
     with st.expander(T("关于","About")):
-        st.markdown(T("**RetailSense** 由一位前瑞幸咖啡店长构建。","**RetailSense** built by a former Luckin Coffee store manager."))
+        st.markdown(T(
+            "**RetailSense** 由一位前瑞幸咖啡店长构建——把 3 年一线门店、带 15 人团队的零售直觉，转化为可解释、可复用的 AI 决策系统。\n\n"
+            "**核心能力**：\n"
+            "- 🎯 **选品评分**：毛利 / 竞争 / 趋势 / 复购 四维规则\n"
+            "- 💰 **定价模型**：成本红线 + 利润模拟 + 竞品比价\n"
+            "- 📦 **库存监控**：安全库存 + 补货点自动预警\n"
+            "- 🚚 **物流配发**：六阶段模拟履约追踪\n"
+            "- 🤖 **销售自动化**：Scout → Price → Copy → Monitor 四 Agent 流水线\n\n"
+            "**技术底座**：FastAPI + Streamlit + 规则引擎 + 多 Agent 编排，全链路数据与决策可追溯、可解释。",
+            "**RetailSense** was built by a former Luckin Coffee store manager — turning 3 years of frontline retail intuition (leading a 15-person team) into an explainable, reusable AI decision system.\n\n"
+            "**Core capabilities**:\n"
+            "- 🎯 **Product scoring**: margin / competition / trend / repurchase rules\n"
+            "- 💰 **Pricing**: cost redline + profit simulation + competitor benchmarking\n"
+            "- 📦 **Inventory**: safety stock + reorder-point alerts\n"
+            "- 🚚 **Logistics**: six-stage simulated fulfillment tracking\n"
+            "- 🤖 **Sales automation**: Scout → Price → Copy → Monitor agent pipeline\n\n"
+            "**Tech stack**: FastAPI + Streamlit + rule engine + multi-agent orchestration — every data point and decision is traceable and explainable.",
+        ))
     with st.expander(T(f"更新日志 {VERSION}","Changelog {VERSION}")):
         st.markdown(CHANGELOG)
     if st.button(T("退出登录", "Logout"), use_container_width=True, key="sidebar_logout"):
@@ -715,28 +730,38 @@ if page == "工作台":
     dashboard_col, assistant_col = st.columns([2.35, 1], gap="large")
     with dashboard_col:
         section_label(T("关键指标", "Key metrics"))
-        metrics = st.columns(4)
-        metrics[0].metric(T("今日营收", "Today revenue"), f"¥{today['revenue']:,.0f}", f"{today['orders']}{T(' 单', ' orders')}")
-        metrics[1].metric(T("本周营收", "Week revenue"), f"¥{week['revenue']:,.0f}")
-        metrics[2].metric(T("本月营收", "Month revenue"), f"¥{month['revenue']:,.0f}")
-        metrics[3].metric(T("库存零售价值", "Inventory value"), f"¥{inv_summary['total_retail']:,.0f}", f"{inv_summary['skus']} SKU")
+        kpi_items = [
+            (T("今日营收", "Today revenue"), f"¥{today['revenue']:,.0f}", f"{today['orders']}{T(' 单', ' orders')}", "coral"),
+            (T("本周营收", "Week revenue"), f"¥{week['revenue']:,.0f}", T("近 7 天", "7 days"), "green"),
+            (T("本月营收", "Month revenue"), f"¥{month['revenue']:,.0f}", T("近 30 天", "30 days"), "purple"),
+            (T("库存零售价值", "Inventory value"), f"¥{inv_summary['total_retail']:,.0f}", f"{inv_summary['skus']} SKU", "warn"),
+        ]
+        kpi_html = "".join(
+            f'<div class="rs-kpi rs-kpi--{tone}">'
+            f'<div class="rs-kpi__label">{label}</div>'
+            f'<div class="rs-kpi__value">{value}</div>'
+            f'<div class="rs-kpi__sub">{sub}</div>'
+            f'</div>'
+            for label, value, sub, tone in kpi_items
+        )
+        st.markdown(f'<div class="rs-kpi-grid">{kpi_html}</div>', unsafe_allow_html=True)
 
         section_label(T("库存健康", "Inventory health"))
         status_cols = st.columns(3)
         normal_count = inv_summary["normal"]
         low_count = inv_summary["low_stock"] + inv_summary["reorder_needed"]
         status_data = [
-            (T("正常", "Healthy"), normal_count, "ok", "#4ae183"),
-            (T("低库存 / 建议补货", "Low / Reorder"), low_count, "warn", "#ffd166"),
-            (T("断货", "Out of stock"), inv_summary["out_of_stock"], "danger", "#ffb4ab"),
+            (T("正常", "Healthy"), normal_count, "ok", "var(--rs-green)"),
+            (T("低库存 / 建议补货", "Low / Reorder"), low_count, "warn", "var(--rs-warn)"),
+            (T("断货", "Out of stock"), inv_summary["out_of_stock"], "danger", "var(--rs-danger)"),
         ]
         for idx, (label, count, css_class, color) in enumerate(status_data):
             with status_cols[idx]:
                 st.markdown(
                     f"""
                     <div class="card-hover {css_class}" style="min-height:104px;text-align:left;">
-                      <div style="font:700 28px/1.2 Manrope;color:{color};">{count}</div>
-                      <div style="font:600 10px/1.35 Geist;color:#b8aaad;margin-top:10px;text-transform:uppercase;letter-spacing:.08em;">{label}</div>
+                      <div style="font:700 28px/1.2 var(--rs-font-display);color:{color};">{count}</div>
+                      <div style="font:600 10px/1.35 var(--rs-font);color:var(--rs-muted);margin-top:10px;text-transform:uppercase;letter-spacing:.08em;">{label}</div>
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -849,7 +874,27 @@ elif page == "选品评分":
             + str(region_data["competition"])
         )
 
-    scoring_input, scoring_result_col = st.columns([1.15, 1.45], gap="large")
+    # ── 近期活动：选品需结合实际活动，放顶部全宽明显展示 ──
+    events = upcoming_events(region)
+    if events:
+        section_label(T("近期活动", "Upcoming events"))
+        event_cols = st.columns(min(3, len(events)), gap="medium")
+        for i, event in enumerate(events):
+            if len(event) == 5:
+                month_label, event_name, description, index_label, tip = event
+                with event_cols[i % len(event_cols)]:
+                    st.markdown(
+                        f'''
+                        <div class="card-hover" style="text-align:left;margin-bottom:10px;padding:14px 16px!important;height:100%;">
+                          <div style="font-weight:700;color:var(--rs-coral-soft);">{escape_html(month_label)} · {escape_html(event_name)}</div>
+                          <div style="font-size:12px;color:var(--rs-muted);margin-top:6px;line-height:1.5;">{escape_html(description)}</div>
+                          <div style="font-size:11px;color:var(--rs-warn);margin-top:5px;">{escape_html(index_label)} · {escape_html(tip)}</div>
+                        </div>
+                        ''',
+                        unsafe_allow_html=True,
+                    )
+
+    scoring_input, scoring_result_col = st.columns([1, 1], gap="large")
     with scoring_input:
         section_label(T("商品与四维输入", "Product and four-factor inputs"))
         selected_index = st.selectbox(
@@ -863,8 +908,8 @@ elif page == "选品评分":
         if b64:
             st.markdown(
                 f'<img alt="{escape_html(pname(selected_product))}" src="data:image/jpeg;base64,{b64}" '
-                f'style="width:100%;max-height:190px;object-fit:contain;border-radius:10px;'
-                f'background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);padding:12px;">',
+                f'style="width:100%;max-height:140px;object-fit:contain;border-radius:10px;'
+                f'background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);padding:8px;display:block;">',
                 unsafe_allow_html=True,
             )
 
@@ -914,31 +959,31 @@ elif page == "选品评分":
             info_strip(T("输入已变化，当前结果待重新计算。", "Inputs changed; recalculate to refresh the result."))
         if stored:
             score = stored["score"]
-            score_color = "#4ae183" if score.final_score >= 80 else ("#ffd166" if score.final_score >= 60 else "#ffb4ab")
+            score_color = "var(--rs-green)" if score.final_score >= 80 else ("var(--rs-warn)" if score.final_score >= 60 else "var(--rs-danger)")
             recommendation = T("优先测试", "Priority test") if score.final_score >= 80 else (T("小批验证", "Small-batch test") if score.final_score >= 60 else T("谨慎上架", "Use caution"))
             st.markdown(
                 f"""
                 <div class="card-hover" style="padding:24px!important;text-align:center;">
-                  <div style="color:#b8aaad;font:600 10px Geist;text-transform:uppercase;letter-spacing:.12em;">{T("综合得分", "Final score")}</div>
-                  <div style="font:800 68px/1 Manrope;color:{score_color};margin:12px 0 4px;">{score.final_score:.0f}</div>
-                  <div style="color:#b8aaad;font-size:12px;">/ 100</div>
+                  <div style="color:var(--rs-muted);font:600 10px var(--rs-font);text-transform:uppercase;letter-spacing:.12em;">{T("综合得分", "Final score")}</div>
+                  <div style="font:800 68px/1 var(--rs-font-display);color:{score_color};margin:12px 0 4px;">{score.final_score:.0f}</div>
+                  <div style="color:var(--rs-muted);font-size:12px;">/ 100</div>
                   <span class="rs-badge" style="margin-top:14px;color:{score_color};">{recommendation}</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
             score_dimensions = [
-                (T("毛利", "Margin"), score.margin_score, 20, "#ff7f6e"),
-                (T("竞争", "Competition"), score.competition_score, 25, "#cebdff"),
-                (T("趋势", "Trend"), score.trend_score, 25, "#ffd166"),
-                (T("复购", "Repurchase"), score.repurchase_score, 30, "#4ae183"),
+                (T("毛利", "Margin"), score.margin_score, 20, "var(--rs-coral)"),
+                (T("竞争", "Competition"), score.competition_score, 25, "var(--rs-purple)"),
+                (T("趋势", "Trend"), score.trend_score, 25, "var(--rs-warn)"),
+                (T("复购", "Repurchase"), score.repurchase_score, 30, "var(--rs-green)"),
             ]
             with st.container(border=True):
                 for label, value, weight, color in score_dimensions:
                     st.markdown(
                         f"""
                         <div style="margin:12px 0;">
-                          <div style="display:flex;justify-content:space-between;font:600 11px Geist;color:var(--rs-text);">
+                          <div style="display:flex;justify-content:space-between;font:600 11px var(--rs-font);color:var(--rs-text);">
                             <span>{label} · {weight}%</span><span>{value:.0f}</span>
                           </div>
                           <div style="height:7px;background:#353437;border-radius:99px;margin-top:7px;overflow:hidden;">
@@ -951,7 +996,15 @@ elif page == "选品评分":
             region_recommendations = best_region_for_product(stored["product"])
             st.caption(T("区域建议：", "Region suggestions: ") + " · ".join(region_recommendations))
         else:
-            info_strip(T("选择商品并计算后显示综合得分、四维子分和解释。", "Choose a product and calculate to see the final score and four sub-scores."))
+            st.markdown(
+                f'<div class="card-hover" style="padding:48px 24px;text-align:center;min-height:360px;'
+                f'display:flex;flex-direction:column;align-items:center;justify-content:center;">'
+                f'<span class="material-symbols-outlined" style="font-size:44px;color:var(--rs-muted);">analytics</span>'
+                f'<div style="margin-top:16px;color:var(--rs-muted);font-size:14px;font-weight:600;">{T("选择商品并计算", "Choose a product and calculate")}</div>'
+                f'<div style="margin-top:6px;color:var(--rs-muted);font-size:12px;">{T("显示综合得分、四维子分与区域建议", "to see the final score, sub-scores and region suggestions")}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
     section_label(T("选品模拟排名", "Product simulation ranking"))
     if st.button(T("生成批量排名", "Generate ranking"), key="batch_scoring"):
@@ -971,15 +1024,11 @@ elif page == "选品评分":
             })
         st.dataframe(pd.DataFrame(ranking_rows), width="stretch", hide_index=True)
 
-    with st.expander(T("评分方法论与近期活动", "Methodology and upcoming events"), expanded=False):
+    with st.expander(T("评分方法论", "Methodology"), expanded=False):
         st.markdown(T(
             "**权重：** 毛利 20% · 竞争 25% · 趋势 25% · 复购 30%。分数用于解释规则，不代表真实销量预测。",
             "**Weights:** Margin 20% · Competition 25% · Trend 25% · Repurchase 30%. Scores explain rules and are not sales forecasts.",
         ))
-        for event in upcoming_events(region):
-            if len(event) == 5:
-                month_label, event_name, description, index_label, tip = event
-                st.markdown(f"**{month_label} · {event_name}** · {index_label}  \n{description}  \n{tip}")
 
 # ══ 定价模型 ══
 elif page == "定价模型":
@@ -1038,20 +1087,20 @@ elif page == "定价模型":
             rate = saved_result["rate"]
             convert = lambda value: round(float(value) * rate, 2)
             margin_pct = float(saved_result["margin_rate"]) * 100
-            margin_color = "#4ae183" if saved_result["above_redline"] else "#ffb4ab"
+            margin_color = "var(--rs-green)" if saved_result["above_redline"] else "var(--rs-danger)"
             st.markdown(
                 f"""
                 <div class="card-hover" style="padding:22px!important;">
-                  <div style="font:600 10px/1 Geist;color:#b8aaad;text-transform:uppercase;letter-spacing:.10em;">{T("建议零售价", "Suggested retail price")}</div>
-                  <div style="font:800 42px/1.15 Manrope;color:var(--rs-coral-soft);margin:10px 0 20px;">{symbol}{convert(saved_result['suggested_price']):,.2f}</div>
+                  <div style="font:600 10px/1 var(--rs-font);color:var(--rs-muted);text-transform:uppercase;letter-spacing:.10em;">{T("建议零售价", "Suggested retail price")}</div>
+                  <div style="font:800 42px/1.15 var(--rs-font-display);color:var(--rs-coral-soft);margin:10px 0 20px;">{symbol}{convert(saved_result['suggested_price']):,.2f}</div>
                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                     <div style="padding:12px;border-radius:8px;background:rgba(255,255,255,.05);">
-                      <div style="color:#b8aaad;font-size:10px;">{T("总成本", "Total cost")}</div>
+                      <div style="color:var(--rs-muted);font-size:10px;">{T("总成本", "Total cost")}</div>
                       <strong>{symbol}{convert(saved_result['total_cost']):,.2f}</strong>
                     </div>
                     <div style="padding:12px;border-radius:8px;background:rgba(74,225,131,.08);">
-                      <div style="color:#4ae183;font-size:10px;">{T("单件利润", "Unit profit")}</div>
-                      <strong style="color:#4ae183">{symbol}{convert(saved_result['profit']):,.2f}</strong>
+                      <div style="color:var(--rs-green);font-size:10px;">{T("单件利润", "Unit profit")}</div>
+                      <strong style="color:var(--rs-green)">{symbol}{convert(saved_result['profit']):,.2f}</strong>
                     </div>
                   </div>
                 </div>
@@ -1061,9 +1110,9 @@ elif page == "定价模型":
             st.markdown(
                 f"""
                 <div class="card-hover" style="margin-top:12px;text-align:center;">
-                  <div style="width:150px;height:150px;margin:6px auto 16px;border-radius:50%;background:conic-gradient(#ff7f6e 0 20%,#cebdff 20% 38%,#ffd166 38% 55%,#4ae183 55% 72%,#353437 72% 100%);display:grid;place-items:center;">
+                  <div style="width:150px;height:150px;margin:6px auto 16px;border-radius:50%;background:conic-gradient(var(--rs-coral) 0 20%,var(--rs-purple) 20% 38%,var(--rs-warn) 38% 55%,var(--rs-green) 55% 72%,#353437 72% 100%);display:grid;place-items:center;">
                     <div style="width:105px;height:105px;border-radius:50%;background:#201f21;display:grid;place-items:center;">
-                      <div><span style="display:block;color:#b8aaad;font-size:10px;">{T("实际利润率", "Actual margin")}</span><strong style="font:700 25px Manrope;color:{margin_color};">{margin_pct:.1f}%</strong></div>
+                      <div><span style="display:block;color:var(--rs-muted);font-size:10px;">{T("实际利润率", "Actual margin")}</span><strong style="font:700 25px var(--rs-font-display);color:{margin_color};">{margin_pct:.1f}%</strong></div>
                     </div>
                   </div>
                   <span class="rs-badge {'rs-badge--coral' if not saved_result['above_redline'] else ''}">
@@ -1111,14 +1160,20 @@ elif page == "库存监控":
     status_counts = {status: sum(1 for _, summary in prepared_inventory if summary["status"] == status) for status in status_order}
     status_columns = st.columns(4)
     status_meta = [
-        ("正常", "Healthy", "#4ae183"),
-        ("建议补货", "Reorder", "#cebdff"),
-        ("低库存", "Low stock", "#ffd166"),
-        ("断货", "Out of stock", "#ffb4ab"),
+        ("正常", "Healthy", "var(--rs-green)"),
+        ("建议补货", "Reorder", "var(--rs-purple)"),
+        ("低库存", "Low stock", "var(--rs-warn)"),
+        ("断货", "Out of stock", "var(--rs-danger)"),
     ]
     for idx, (status_cn, status_en, color) in enumerate(status_meta):
         with status_columns[idx]:
-            st.metric(T(status_cn, status_en), status_counts[status_cn])
+            st.markdown(
+                f'<div class="rs-kpi">'
+                f'<div class="rs-kpi__label">{T(status_cn, status_en)}</div>'
+                f'<div class="rs-kpi__value" style="color:{color}">{status_counts[status_cn]}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
             if st.button(T("筛选此状态", "Filter"), key=f"filter_inventory_{status_cn}", use_container_width=True):
                 st.session_state.inventory_status_filter = status_cn
                 st.rerun()
@@ -1181,7 +1236,24 @@ elif page == "库存监控":
 
     section_label(T("库存明细", "Inventory details"))
     if rows:
-        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        inventory_df = pd.DataFrame(rows)
+        status_col_name = T("状态", "Status")
+
+        def _color_status(val):
+            v = str(val)
+            if "断货" in v or "Out of stock" in v:
+                return "color: var(--rs-danger); font-weight: 700;"
+            if "低库存" in v or "Low stock" in v:
+                return "color: var(--rs-warn); font-weight: 700;"
+            if "建议补货" in v or "Reorder" in v:
+                return "color: var(--rs-purple); font-weight: 700;"
+            return "color: var(--rs-green); font-weight: 700;"
+
+        st.dataframe(
+            inventory_df.style.map(_color_status, subset=[status_col_name]),
+            width="stretch",
+            hide_index=True,
+        )
         st.caption(T(f"共 {len(rows)} 条结果；四个状态互斥。", f"{len(rows)} results; inventory statuses are mutually exclusive."))
     else:
         info_strip(T("当前筛选条件下没有库存记录。请清除搜索或状态筛选。", "No inventory matches the current filters. Clear the search or status filter."))
@@ -1239,35 +1311,67 @@ elif page == "案例库":
             st.session_state.case_industry = all_industry
             st.rerun()
     else:
-        card_columns = st.columns(min(3, len(filtered_cases)), gap="medium")
-        for index, case in enumerate(filtered_cases):
-            original_index = cases.index(case)
-            with card_columns[index % len(card_columns)], st.container(border=True):
-                st.image(case_images[original_index % len(case_images)], use_container_width=True)
-                st.markdown(
-                    f"<span class='rs-badge rs-badge--coral'>{T('虚拟案例', 'Fictional case')}</span>",
-                    unsafe_allow_html=True,
-                )
-                st.markdown(f"### {escape_html(case['company'])}")
-                st.caption(f"{escape_html(case['industry'])} · {escape_html(case['region'])} · {escape_html(case['stage'])}")
-                st.markdown(f"**{T('痛点', 'Problem')}**")
-                st.write(case["problem"])
-                st.caption(T("使用功能：", "Features: ") + "、".join(case["products_used"]))
-                with st.expander(T("查看详情  →", "View details  →"), expanded=False):
-                    st.markdown(f"**{T('使用前', 'Before')}**")
-                    st.write(case["problem"])
-                    st.markdown(f"**{T('解决方案', 'Solution')}**")
-                    st.write(case["solution"])
-                    metric_cols = st.columns(2)
-                    metric_cols[0].metric(T("耗时", "Time"), case["after"]["time"], delta=f"↓ {case['before']['time']}", delta_color="inverse")
-                    metric_cols[1].metric(T("成本", "Cost"), case["after"]["cost"], delta=f"↓ {case['before']['cost']}")
-                    metric_cols[0].metric(T("人力", "People"), case["after"]["people"], delta=f"↓ {case['before']['people']}", delta_color="inverse")
-                    metric_cols[1].metric(T("错误率", "Errors"), case["after"]["error"], delta=f"↓ {case['before']['error']}")
-                    st.markdown(T("**虚拟反馈（演示文案）**", "**Fictional feedback (demo copy)**"))
-                    st.markdown(
-                        f'<div class="rs-case-feedback">“{escape_html(case["testimonial"])}”</div>',
-                        unsafe_allow_html=True,
-                    )
+        # ── PPT 式：单案例翻页展示 ──
+        if "case_index" not in st.session_state:
+            st.session_state.case_index = 0
+        case_index = st.session_state.case_index % len(filtered_cases)
+        case = filtered_cases[case_index]
+        original_index = cases.index(case)
+
+        hero_img, hero_txt = st.columns([1, 2.6], gap="medium")
+        with hero_img:
+            st.image(case_images[original_index % len(case_images)], use_container_width=True)
+        with hero_txt:
+            st.markdown(
+                f'''
+                <div class="rs-welcome-panel" style="padding:24px 28px;margin-bottom:20px;height:100%;">
+                  <span class="rs-badge rs-badge--coral">{T("虚拟案例", "Fictional case")} · {case_index + 1}/{len(filtered_cases)}</span>
+                  <h2 style="margin:12px 0 6px;font-size:2rem!important;">{escape_html(case["company"])}</h2>
+                  <p>{escape_html(case["industry"])} · {escape_html(case["region"])} · {escape_html(case["stage"])}</p>
+                </div>
+                ''',
+                unsafe_allow_html=True,
+            )
+
+        prob_col, sol_col = st.columns(2, gap="large")
+        with prob_col:
+            st.markdown(f"### {T('痛点', 'Problem')}")
+            st.write(case["problem"])
+            st.caption(T("使用功能：", "Features: ") + "、".join(case["products_used"]))
+        with sol_col:
+            st.markdown(f"### {T('解决方案', 'Solution')}")
+            st.write(case["solution"])
+
+        st.markdown(f"### {T('使用前后对比', 'Before / After')}")
+        mc = st.columns(4)
+        mc[0].metric(T("耗时", "Time"), case["after"]["time"], delta=f"↓ {case['before']['time']}", delta_color="inverse")
+        mc[1].metric(T("成本", "Cost"), case["after"]["cost"], delta=f"↓ {case['before']['cost']}", delta_color="inverse")
+        mc[2].metric(T("人力", "People"), case["after"]["people"], delta=f"↓ {case['before']['people']}", delta_color="inverse")
+        mc[3].metric(T("错误率", "Errors"), case["after"]["error"], delta=f"↓ {case['before']['error']}", delta_color="inverse")
+
+        st.markdown(
+            f'<div class="rs-case-feedback">"{escape_html(case["testimonial"])}"</div>',
+            unsafe_allow_html=True,
+        )
+
+        st.divider()
+        nav_cols = st.columns([1, 3, 1])
+        with nav_cols[0]:
+            if st.button(T("← 上一个", "← Prev"), disabled=(case_index == 0), use_container_width=True, key="case_prev"):
+                st.session_state.case_index = case_index - 1
+                st.rerun()
+        with nav_cols[1]:
+            dots = " ".join(
+                f'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin:0 3px;'
+                f'background:{"var(--rs-coral)" if i == case_index else "var(--rs-muted)"};'
+                f'opacity:{"1" if i == case_index else ".35"};"></span>'
+                for i in range(len(filtered_cases))
+            )
+            st.markdown(f'<div style="text-align:center;padding-top:6px;">{dots}</div>', unsafe_allow_html=True)
+        with nav_cols[2]:
+            if st.button(T("下一个 →", "Next →"), disabled=(case_index == len(filtered_cases) - 1), use_container_width=True, key="case_next"):
+                st.session_state.case_index = case_index + 1
+                st.rerun()
 
 # ══ 销售自动化 ══
 elif page == "销售自动化":
@@ -1308,16 +1412,16 @@ elif page == "销售自动化":
     ]
     for index, (icon, name, description) in enumerate(stage_definitions):
         complete = pipeline_state is not None
-        border_color = "#4ae183" if complete else "rgba(255,255,255,.12)"
+        border_color = "var(--rs-green)" if complete else "rgba(255,255,255,.12)"
         status_text = T("完成", "Complete") if complete else T("待执行", "Ready")
         with steps[index]:
             st.markdown(
                 f"""
-                <div class="card-hover" style="min-height:132px;text-align:center;border-color:{border_color}!important;">
-                  <span class="material-symbols-outlined" style="font-size:26px;color:{'#4ae183' if complete else '#b8aaad'};">{icon}</span>
-                  <div style="font:700 14px Manrope;margin:10px 0 4px;">{name}</div>
-                  <div style="color:#b8aaad;font-size:11px;">{description}</div>
-                  <div style="margin-top:11px;color:{'#4ae183' if complete else '#b8aaad'};font:600 9px Geist;text-transform:uppercase;letter-spacing:.10em;">{status_text}</div>
+                <div class="card-hover" style="min-height:150px;text-align:center;border-color:{border_color}!important;">
+                  <span class="material-symbols-outlined" style="font-size:32px;color:{'var(--rs-green)' if complete else 'var(--rs-muted)'};">{icon}</span>
+                  <div style="font:700 16px var(--rs-font-display);margin:12px 0 5px;">{name}</div>
+                  <div style="color:var(--rs-muted);font-size:12px;line-height:1.5;">{description}</div>
+                  <div style="margin-top:12px;color:{'var(--rs-green)' if complete else 'var(--rs-muted)'};font:600 10px var(--rs-font);text-transform:uppercase;letter-spacing:.10em;">{status_text}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1369,12 +1473,17 @@ elif page == "销售自动化":
                     "margin": T("利润率", "Margin"),
                     "above_redline": T("达到红线", "Meets redline"),
                 })
+                margin_col = T("利润率", "Margin")
+                price_rows[margin_col] = (price_rows[margin_col] * 100).round(1).astype(str) + "%"
                 st.dataframe(price_rows, width="stretch", hide_index=True)
         with result_copy:
             for generated in pipeline_state.copy or []:
                 with st.expander(f"{generated['name']} · SEO / Social / Sales", expanded=False):
-                    st.markdown(f"**SEO**  \n{generated['seo']}")
-                    st.markdown(f"**{T('社交内容', 'Social')}**  \n{generated['social']}")
+                    st.markdown(f"**SEO (EN)**  \n{generated['seo']}")
+                    st.markdown(f"**Social (EN)**  \n{generated['social']}")
+                    with st.expander(T("中文对照", "Chinese translation"), expanded=False):
+                        st.markdown(f"**SEO（中文）**  \n{generated.get('seo_zh', '')}")
+                        st.markdown(f"**Social（中文）**  \n{generated.get('social_zh', '')}")
                     st.markdown(f"**{T('销售话术', 'Sales script')}**  \n{generated['script'].get('开场', '')}")
         with result_monitor:
             if pipeline_state.monitor:
@@ -1489,24 +1598,28 @@ elif page == "物流配发":
         total_qty = sum(it["qty"] for it in o["items"])
 
         status_map = {
-            "pending": ("🟡 " + T("待处理","Pending"), "#f4b400"),
+            "pending": ("🟡 " + T("待处理","Pending"), "var(--rs-warn)"),
             "picking": ("🔵 " + T("拣货中","Picking"), "#4285f4"),
-            "shipped": ("🟢 " + T("已发货","Shipped"), "#34a853"),
+            "shipped": ("🟢 " + T("已发货","Shipped"), "var(--rs-green)"),
         }
-        status_text, status_color = status_map.get(o["status"], ("❓", "#888"))
+        status_text, status_color = status_map.get(o["status"], ("❓", "var(--rs-muted)"))
 
         row_cols = st.columns([2.2, 1.6, 2.2, 0.7, 1.1, 1.2, 0.8])
 
         with row_cols[0]:
             priority_badge = " 🔴" if o.get("priority") == "urgent" else ""
-            st.markdown(f"`{oid}`{priority_badge}")
+            st.markdown(
+                f"<code style='font-weight:700;color:var(--rs-coral-soft);background:rgba(255,255,255,.07);"
+                f"padding:2px 7px;border-radius:5px;font-size:12px;'>{oid}</code>{priority_badge}",
+                unsafe_allow_html=True,
+            )
             st.caption(o["created_at"])
 
         with row_cols[1]:
-            st.caption(cust)
+            st.markdown(f"**{escape_html(cust)}**")
 
         with row_cols[2]:
-            st.caption(items_text if len(items_text) <= 30 else items_text[:27] + "...")
+            st.markdown(f"**{escape_html(items_text if len(items_text) <= 30 else items_text[:27] + '...')}**")
 
         with row_cols[3]:
             st.markdown(f"**{total_qty}**")
@@ -1515,7 +1628,7 @@ elif page == "物流配发":
             # ── 虚拟发货订单显示绿色已发货 ──
             is_virtual_shipped = oid in st.session_state.waybill_cache
             display_status = "shipped" if is_virtual_shipped else o["status"]
-            vs_text, vs_color = status_map.get(display_status, ("❓", "#888"))
+            vs_text, vs_color = status_map.get(display_status, ("❓", "var(--rs-muted)"))
             st.markdown(
                 f'<span style="color:{vs_color};font-weight:600;font-size:12px;">{vs_text}</span>',
                 unsafe_allow_html=True,
@@ -1649,22 +1762,22 @@ elif page == "物流配发":
                         if i < 3:
                             with row1_cols[i]:
                                 if i < current:
-                                    bg, tc = "#34a853", "#fff"
+                                    bg, tc = "var(--rs-green)", "#fff"
                                 elif i == current:
-                                    bg, tc = "#FF8C42", "#fff"
+                                    bg, tc = "var(--rs-coral)", "#fff"
                                 else:
-                                    bg, tc = "#e0e0e0", "#888"
+                                    bg, tc = "var(--rs-surface-high)", "var(--rs-muted)"
                                 st.markdown(f"""<div style="background:{bg};color:{tc};border-radius:6px;padding:4px 2px;text-align:center;font-size:10px;font-weight:600;">
                                     {icon}<br>{label}
                                 </div>""", unsafe_allow_html=True)
                         else:
                             with row2_cols[i - 3]:
                                 if i < current:
-                                    bg, tc = "#34a853", "#fff"
+                                    bg, tc = "var(--rs-green)", "#fff"
                                 elif i == current:
-                                    bg, tc = "#FF8C42", "#fff"
+                                    bg, tc = "var(--rs-coral)", "#fff"
                                 else:
-                                    bg, tc = "#e0e0e0", "#888"
+                                    bg, tc = "var(--rs-surface-high)", "var(--rs-muted)"
                                 st.markdown(f"""<div style="background:{bg};color:{tc};border-radius:6px;padding:4px 2px;text-align:center;font-size:10px;font-weight:600;">
                                     {icon}<br>{label}
                                 </div>""", unsafe_allow_html=True)
@@ -1706,11 +1819,11 @@ elif page == "物流配发":
                     for i, (label, icon) in enumerate(step_labels):
                         with pc[i]:
                             if i < current:
-                                bg, tc = "#34a853", "#fff"
+                                bg, tc = "var(--rs-green)", "#fff"
                             elif i == current:
-                                bg, tc = "#FF8C42", "#fff"
+                                bg, tc = "var(--rs-coral)", "#fff"
                             else:
-                                bg, tc = "#e0e0e0", "#888"
+                                bg, tc = "var(--rs-surface-high)", "var(--rs-muted)"
                             st.markdown(f"""<div style="background:{bg};color:{tc};border-radius:6px;padding:6px 2px;text-align:center;font-size:10px;font-weight:600;">
                                 {icon}<br>{label}
                             </div>""", unsafe_allow_html=True)
@@ -1800,11 +1913,11 @@ elif page == "物流配发":
         with inv_cols[col_idx]:
             qty = int(inv_item["qty"])
             status_class = "danger" if qty == 0 else ("warn" if qty < 15 else "ok")
-            border_color = "#ea4335" if qty == 0 else ("#f4b400" if qty < 15 else "#34a853")
+            border_color = "var(--rs-danger)" if qty == 0 else ("var(--rs-warn)" if qty < 15 else "var(--rs-green)")
             st.markdown(f"""<div class="card-hover {status_class}" style="min-height:80px;">
                 <div style="font-size:22px;font-weight:800;color:{border_color};">{qty}</div>
                 <div style="font-size:12px;font-weight:600;">{inv_item['name' if not is_en else 'name_en']}</div>
-                <div style="font-size:10px;color:#888;">{inv_item['sku']} · {inv_item['location']} ({inv_item['zone']})</div>
+                <div style="font-size:10px;color:var(--rs-muted);">{inv_item['sku']} · {inv_item['location']} ({inv_item['zone']})</div>
             </div>""", unsafe_allow_html=True)
 
     # ── 订单API接入口 (Order API Integration) ──
@@ -2205,7 +2318,7 @@ elif page == "商品上架":
                 b64 = _get_product_image(p.get("img", ""))
                 status = p["listing_status"]
                 is_pending = status == "待上架"
-                border = "2px solid #ff7f6e" if i == selected_product_idx else ("1px solid rgba(255,255,255,.12)" if is_pending else "1px solid rgba(74,225,131,.35)")
+                border = "2px solid var(--rs-coral)" if i == selected_product_idx else ("1px solid rgba(255,255,255,.12)" if is_pending else "1px solid rgba(74,225,131,.35)")
                 bg = "rgba(255,127,110,.08)" if i == selected_product_idx else ("rgba(255,255,255,.045)" if is_pending else "rgba(74,225,131,.06)")
 
                 status_badge_cn = "🟡 待上架" if is_pending else "🟢 已上架"
@@ -2214,12 +2327,12 @@ elif page == "商品上架":
                 card_html = f'''<div style="border:{border};border-radius:8px;padding:10px;text-align:center;background:{bg};min-height:170px;">
                     <span style="font-size:10px;font-weight:600;">{status_badge_en if is_en else status_badge_cn}</span><br>'''
                 if b64:
-                    card_html += f'<img src="data:image/jpeg;base64,{b64}" style="width:64px;height:64px;border-radius:6px;object-fit:cover;margin:4px 0;"><br>'
+                    card_html += f'<img src="data:image/jpeg;base64,{b64}" style="width:64px;height:64px;border-radius:6px;object-fit:cover;display:block;margin:6px auto;"><br>'
                 else:
                     card_html += '<span style="font-size:28px;">🐾</span><br>'
                 card_html += f'''<div style="font-weight:600;font-size:12px;">{escape_html(pname(p))}</div>
-                    <div style="font-size:11px;color:#FF8C42;font-weight:700;">¥{p["price"]:.2f}</div>
-                    <div style="font-size:10px;color:#888;">成本 ¥{p["cost"]:.2f}</div></div>'''
+                    <div style="font-size:11px;color:var(--rs-coral);font-weight:700;">¥{p["price"]:.2f}</div>
+                    <div style="font-size:10px;color:var(--rs-muted);">成本 ¥{p["cost"]:.2f}</div></div>'''
                 st.markdown(card_html, unsafe_allow_html=True)
                 if st.button(T("选择","Select"), key=f"listing_sel_{i}", width="stretch"):
                     st.session_state.listing_selected_idx = i
@@ -2235,12 +2348,12 @@ elif page == "商品上架":
         with detail_cols[0]:
             b64 = _get_product_image(selected.get("img", ""))
             if b64:
-                st.markdown(f'<img src="data:image/jpeg;base64,{b64}" style="width:160px;height:160px;border-radius:10px;object-fit:cover;">', unsafe_allow_html=True)
+                st.markdown(f'<img src="data:image/jpeg;base64,{b64}" style="width:160px;height:160px;border-radius:10px;object-fit:cover;display:block;margin:0 auto;">', unsafe_allow_html=True)
 
         with detail_cols[1]:
             st.markdown(f"### {pname(selected)}")
             sel_status = selected["listing_status"]
-            st.markdown(f'<span style="color:{"#34a853" if sel_status != "待上架" else "#f4b400"};font-weight:600;">{"🟢 " + T("已上架","Listed") if sel_status != "待上架" else "🟡 " + T("待上架","Pending")}</span>', unsafe_allow_html=True)
+            st.markdown(f'<span style="color:{"var(--rs-green)" if sel_status != "待上架" else "var(--rs-warn)"};font-weight:600;">{"🟢 " + T("已上架","Listed") if sel_status != "待上架" else "🟡 " + T("待上架","Pending")}</span>', unsafe_allow_html=True)
 
             mc = st.columns(3)
             mc[0].metric(T("售价","Price"), f"¥{selected['price']:.2f}")
@@ -2266,12 +2379,12 @@ elif page == "商品上架":
         for i, (pkey, pinfo) in enumerate(PLATFORMS.items()):
             with plat_cols[i]:
                 is_sel_plat = selected_platform == pkey
-                border_p = "2px solid #ff7f6e" if is_sel_plat else "1px solid rgba(255,255,255,.12)"
+                border_p = "2px solid var(--rs-coral)" if is_sel_plat else "1px solid rgba(255,255,255,.12)"
                 bg_p = "rgba(255,127,110,.08)" if is_sel_plat else "rgba(255,255,255,.045)"
                 st.markdown(f"""<div style="border:{border_p};border-radius:8px;padding:12px;text-align:center;background:{bg_p};min-height:110px;">
                     <div style="font-size:28px;">{pinfo['icon']}</div>
                     <div style="font-weight:700;font-size:13px;">{pinfo['name']}</div>
-                    <div style="font-size:10px;color:#888;">{pinfo['desc_en'] if is_en else pinfo['desc_cn']}</div>
+                    <div style="font-size:10px;color:var(--rs-muted);">{pinfo['desc_en'] if is_en else pinfo['desc_cn']}</div>
                 </div>""", unsafe_allow_html=True)
                 if st.button(T("选择","Select") + f" {pinfo['name']}", key=f"plat_sel_{pkey}", width="stretch",
                              type="primary" if is_sel_plat else "secondary"):
@@ -2375,8 +2488,8 @@ elif page == "商品上架":
                     icon = next((p["icon"] for p in PLATFORMS.values() if p["name"] == pf), "📦")
                     st.markdown(f"""<div class="card-hover ok" style="min-height:60px;text-align:center;">
                         <div style="font-size:20px;">{icon}</div>
-                        <div style="font-size:18px;font-weight:700;color:#FF8C42;">{cnt}</div>
-                        <div style="font-size:10px;color:#888;">{pf}</div>
+                        <div style="font-size:18px;font-weight:700;color:var(--rs-coral);">{cnt}</div>
+                        <div style="font-size:10px;color:var(--rs-muted);">{pf}</div>
                     </div>""", unsafe_allow_html=True)
 
             st.divider()
@@ -2716,8 +2829,8 @@ elif page == "导出报表":
     st.markdown(f"""
     <style>
     .export-download-area {{
-        background: linear-gradient(135deg, #FFF8F0, #FFE8D6);
-        border: 2px dashed #FF8C42;
+        background: var(--rs-glass);
+        border: 2px dashed var(--rs-coral);
         border-radius: 12px;
         padding: 24px 20px;
         text-align: center;
@@ -2733,12 +2846,12 @@ elif page == "导出报表":
     .export-title {{
         font-size: 18px;
         font-weight: 700;
-        color: #FF8C42;
+        color: var(--rs-coral);
         margin-bottom: 4px;
     }}
     .export-sub {{
         font-size: 12px;
-        color: #888;
+        color: var(--rs-muted);
         margin-bottom: 16px;
     }}
     </style>
@@ -2779,7 +2892,7 @@ elif page == "导出报表":
 
 st.markdown(
     f"<div style='margin-top:36px;padding-top:16px;border-top:1px solid rgba(255,255,255,.06);"
-    f"display:flex;justify-content:space-between;color:var(--rs-muted);font:600 10px Geist;'>"
+    f"display:flex;justify-content:space-between;color:var(--rs-muted);font:600 10px var(--rs-font);'>"
     f"<span>RetailSense {VERSION}</span><span>{T('虚拟数据 · 本地规则引擎', 'Virtual data · Local rule engine')}</span></div>",
     unsafe_allow_html=True,
 )

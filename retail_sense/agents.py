@@ -103,15 +103,19 @@ class CopyAgent:
 
         for item in state.priced:
             prod = next((p for p in state.products if p["name"] == item["name"]), {})
-            seo = self.copywriter.generate(prod, "seo")
-            social = self.copywriter.generate(prod, "social")
+            seo_en = self.copywriter.generate_en(prod, "seo", state.region)
+            social_en = self.copywriter.generate_en(prod, "social", state.region)
+            seo_zh = self.copywriter.generate(prod, "seo", state.region)
+            social_zh = self.copywriter.generate(prod, "social", state.region)
             angle = self.intent.best_angle(prod)
             script = self.script.full_script(prod)
 
             state.copy.append({
                 "name": item["name"],
-                "seo": seo,
-                "social": social,
+                "seo": seo_en,
+                "social": social_en,
+                "seo_zh": seo_zh,
+                "social_zh": social_zh,
                 "angle": angle,
                 "script": script,
             })
