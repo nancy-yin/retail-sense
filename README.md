@@ -1,6 +1,6 @@
 # RetailSense 🛒
 
-[![CI](https://github.com/yinqiqi1005-crypto/retail-sense/actions/workflows/test.yml/badge.svg)](https://github.com/yinqiqi1005-crypto/retail-sense/actions)
+[![CI](https://github.com/nancy-yin/retail-sense/actions/workflows/test.yml/badge.svg)](https://github.com/nancy-yin/retail-sense/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-orange.svg)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
 
@@ -29,7 +29,7 @@
 
 ```bash
 # 1. 克隆
-git clone https://github.com/yinqiqi1005-crypto/retail-sense.git
+git clone https://github.com/nancy-yin/retail-sense.git
 cd retail-sense
 
 # 2. 安装
