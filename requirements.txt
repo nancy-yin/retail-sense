@@ -1,5 +1,4 @@
-# RetailSense 依赖
-streamlit>=1.60
-pandas>=2.0
-Pillow>=10.0
-# Python 3.11+
+# RetailSense 依赖（锁定版本）
+streamlit==1.62.0
+pandas==3.0.5
+Pillow==12.3.0

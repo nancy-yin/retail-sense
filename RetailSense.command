@@ -6,7 +6,7 @@
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PYTHON_BIN="$PROJECT_DIR/.venv/bin/python"
-APP_URL="http://localhost:8501"
+APP_URL="http://localhost:8503"
 
 # 切换到项目目录
 cd "$PROJECT_DIR" || {
